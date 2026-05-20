@@ -1,0 +1,172 @@
+import type { Card as CardType } from '@/utils/types'
+
+interface CardProps {
+  card: CardType
+  playable: boolean
+  onClick?: () => void
+  small?: boolean
+}
+
+const colorMap: Record<string, string> = {
+  red: '#E53935',
+  yellow: '#FDD835',
+  blue: '#1E88E5',
+  green: '#43A047',
+}
+
+function CornerContent({ card, small }: { card: CardType; small?: boolean }) {
+  const sizeClass = small ? 'text-[10px]' : 'text-[14px]'
+
+  switch (card.type) {
+    case 'number':
+      return (
+        <>
+          <div className={`card-corner top-left ${sizeClass}`} style={{ color: colorMap[card.color!] }}>
+            {card.value}
+          </div>
+          <div className={`card-corner bottom-right ${sizeClass}`} style={{ color: colorMap[card.color!] }}>
+            {card.value}
+          </div>
+        </>
+      )
+    case 'skip':
+      return (
+        <>
+          <div className={`card-corner top-left ${sizeClass}`} style={{ color: colorMap[card.color!] }}>S</div>
+          <div className={`card-corner bottom-right ${sizeClass}`} style={{ color: colorMap[card.color!] }}>S</div>
+        </>
+      )
+    case 'reverse':
+      return (
+        <>
+          <div className={`card-corner top-left ${sizeClass}`} style={{ color: colorMap[card.color!] }}>R</div>
+          <div className={`card-corner bottom-right ${sizeClass}`} style={{ color: colorMap[card.color!] }}>R</div>
+        </>
+      )
+    case 'draw2':
+      return (
+        <>
+          <div className={`card-corner top-left ${sizeClass}`} style={{ color: colorMap[card.color!] }}>+2</div>
+          <div className={`card-corner bottom-right ${sizeClass}`} style={{ color: colorMap[card.color!] }}>+2</div>
+        </>
+      )
+    case 'wild':
+      return (
+        <>
+          <div className={`card-corner top-left ${sizeClass} text-white`}>W</div>
+          <div className={`card-corner bottom-right ${sizeClass} text-white`}>W</div>
+        </>
+      )
+    case 'wild4':
+      return (
+        <>
+          <div className={`card-corner top-left ${sizeClass} text-white`}>W4</div>
+          <div className={`card-corner bottom-right ${sizeClass} text-white`}>W4</div>
+        </>
+      )
+    default:
+      return null
+  }
+}
+
+function CenterContent({ card, small }: { card: CardType; small?: boolean }) {
+  const numberSize = small ? 'text-[24px]' : 'text-[36px]'
+  const symbolSize = small ? 'text-[20px]' : 'text-[28px]'
+
+  switch (card.type) {
+    case 'number':
+      return (
+        <div className={`card-center ${numberSize}`} style={{ color: colorMap[card.color!] }}>
+          {card.value}
+        </div>
+      )
+    case 'skip':
+      return (
+        <div className={`card-center-symbol ${symbolSize}`} style={{ color: colorMap[card.color!] }}>
+          &#8856;
+        </div>
+      )
+    case 'reverse':
+      return (
+        <div className={`card-center-symbol ${symbolSize}`} style={{ color: colorMap[card.color!] }}>
+          &#10226;
+        </div>
+      )
+    case 'draw2':
+      return (
+        <div className={`card-center ${numberSize}`} style={{ color: colorMap[card.color!] }}>
+          +2
+        </div>
+      )
+    case 'wild':
+      return (
+        <div className={`relative ${small ? 'w-10 h-10' : 'w-14 h-14'}`}>
+          <svg viewBox="0 0 56 56" className="w-full h-full">
+            <defs>
+              <clipPath id={`wild-clip-${card.id}`}>
+                <circle cx="28" cy="28" r="26" />
+              </clipPath>
+            </defs>
+            <g clipPath={`url(#wild-clip-${card.id})`}>
+              <rect x="0" y="0" width="28" height="28" fill={colorMap.red} />
+              <rect x="28" y="0" width="28" height="28" fill={colorMap.blue} />
+              <rect x="0" y="28" width="28" height="28" fill={colorMap.yellow} />
+              <rect x="28" y="28" width="28" height="28" fill={colorMap.green} />
+            </g>
+            <circle cx="28" cy="28" r="26" fill="none" stroke="#fff" strokeWidth="3" />
+          </svg>
+        </div>
+      )
+    case 'wild4':
+      return (
+        <div className={`relative ${small ? 'w-10 h-10' : 'w-14 h-14'}`}>
+          <svg viewBox="0 0 56 56" className="w-full h-full">
+            <defs>
+              <clipPath id={`wild4-clip-${card.id}`}>
+                <circle cx="28" cy="28" r="26" />
+              </clipPath>
+            </defs>
+            <g clipPath={`url(#wild4-clip-${card.id})`}>
+              <rect x="0" y="0" width="28" height="28" fill={colorMap.red} />
+              <rect x="28" y="0" width="28" height="28" fill={colorMap.blue} />
+              <rect x="0" y="28" width="28" height="28" fill={colorMap.yellow} />
+              <rect x="28" y="28" width="28" height="28" fill={colorMap.green} />
+            </g>
+            <circle cx="28" cy="28" r="26" fill="none" stroke="#fff" strokeWidth="3" />
+          </svg>
+          <div
+            className="absolute inset-0 flex items-center justify-center font-bold text-white"
+            style={{ fontSize: small ? '12px' : '16px', textShadow: '1px 1px 2px #000' }}
+          >
+            +4
+          </div>
+        </div>
+      )
+    default:
+      return null
+  }
+}
+
+export default function Card({ card, playable, onClick, small }: CardProps) {
+  const isWild = card.type === 'wild' || card.type === 'wild4'
+  const borderColor = isWild ? '#333' : colorMap[card.color!]
+  const bgColor = isWild ? '#333' : '#fff'
+  const textColor = isWild ? 'text-white' : ''
+
+  const sizeClass = small ? 'w-[60px] h-[90px]' : ''
+  const playableClass = playable ? 'playable' : 'not-playable'
+
+  return (
+    <div
+      className={`uno-card ${playableClass} ${sizeClass} ${textColor} bg-white flex-shrink-0`}
+      style={{
+        border: `4px solid ${borderColor}`,
+        backgroundColor: bgColor,
+      }}
+      onClick={onClick}
+    >
+      <CornerContent card={card} small={small} />
+      <CenterContent card={card} small={small} />
+    </div>
+  )
+}
