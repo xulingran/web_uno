@@ -52,6 +52,17 @@ describe('configStore', () => {
     expect(config.draw.drawToMatch).toBe(true)
   })
 
+  it('applyPreset 保留当前 AI 难度设置', () => {
+    useConfigStore.getState().updateParam('ai', { difficulty: 'hard' })
+    expect(useConfigStore.getState().config.ai.difficulty).toBe('hard')
+
+    useConfigStore.getState().applyPreset('casual')
+
+    const config = useConfigStore.getState().config
+    expect(config.ai.difficulty).toBe('hard')
+    expect(config.draw.drawToMatch).toBe(true)
+  })
+
   it("applyPreset('custom') — 应不变（custom 预设会直接 return）", () => {
     useConfigStore.getState().updateParam('params', { aiPlayerCount: 5 })
     expect(useConfigStore.getState().config.params.aiPlayerCount).toBe(5)

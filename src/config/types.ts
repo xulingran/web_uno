@@ -59,9 +59,11 @@ export interface GameConfig {
 
 export type PresetName = 'classic' | 'casual' | 'hardcore' | 'custom'
 
+export type RulesConfig = Omit<GameConfig, 'ai'>
+
 export interface PresetConfig {
   name: PresetName
   label: string
   description: string
-  config: GameConfig
+  config: RulesConfig
 }

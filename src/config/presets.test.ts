@@ -30,13 +30,16 @@ describe('PRESETS', () => {
       expect(preset.description.length).toBeGreaterThan(0)
     })
 
-    it('config 包含 params, actionCards, draw, uno, scoring, ai', () => {
+    it('config 包含 params, actionCards, draw, uno, scoring', () => {
       expect(preset.config).toHaveProperty('params')
       expect(preset.config).toHaveProperty('actionCards')
       expect(preset.config).toHaveProperty('draw')
       expect(preset.config).toHaveProperty('uno')
       expect(preset.config).toHaveProperty('scoring')
-      expect(preset.config).toHaveProperty('ai')
+    })
+
+    it('config 不包含 ai（AI 难度独立于预设）', () => {
+      expect(preset.config).not.toHaveProperty('ai')
     })
   })
 

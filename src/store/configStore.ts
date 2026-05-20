@@ -13,7 +13,7 @@ interface ConfigState {
   resetToDefaults: () => void
 }
 
-export const useConfigStore = create<ConfigState>()((set) => ({
+export const useConfigStore = create<ConfigState>()((set, get) => ({
   config: loadConfig(),
   activePreset: 'custom',
 
@@ -37,8 +37,9 @@ export const useConfigStore = create<ConfigState>()((set) => ({
     if (presetName === 'custom') return
     const preset = getPresetConfig(presetName)
     if (!preset) return
-    saveConfig(preset.config)
-    set({ config: preset.config, activePreset: presetName })
+    const newConfig = { ...preset.config, ai: { ...get().config.ai } } as GameConfig
+    saveConfig(newConfig)
+    set({ config: newConfig, activePreset: presetName })
   },
 
   resetToDefaults: () => {
