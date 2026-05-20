@@ -7,29 +7,32 @@ export function findBestCard(
   topCard: Card,
   currentColor: CardColor,
   config: { ai: AIConfig; actionCards: { sevenORule: boolean } },
-  opponents?: { handLength: number }[]
+  opponents?: { handLength: number }[],
+  nextPlayerHandLength?: number
 ): Card | null {
-  const playable = hand.filter((c) => canPlayCard(c, topCard, currentColor, hand))
-  if (playable.length === 0) return null
-
   const ai = config.ai
 
+  // Bluff check BEFORE canPlayCard filtering — wild4 is normally unplayable
+  // when hand has matching color, so we must check before filtering
   if (ai.wild4BluffChance > 0) {
-    const wild4InPlayable = playable.find((c) => c.type === 'wild4')
-    if (wild4InPlayable) {
-      const nonWild4Playable = playable.filter((c) => c.type !== 'wild4')
-      if (nonWild4Playable.length > 0) {
-        const hasMatchingColor = hand.some(
-          (c) => c.color === currentColor && c.type !== 'wild' && c.type !== 'wild4'
+    const wild4 = hand.find((c) => c.type === 'wild4')
+    if (wild4) {
+      const hasMatchingColor = hand.some(
+        (c) => c.color === currentColor && c.type !== 'wild' && c.type !== 'wild4'
+      )
+      if (hasMatchingColor) {
+        const hasOtherPlayable = hand.some(
+          (c) => c.type !== 'wild4' && c.type !== 'wild' && canPlayCard(c, topCard, currentColor, hand)
         )
-        if (hasMatchingColor) {
-          if (Math.random() < ai.wild4BluffChance) {
-            return wild4InPlayable
-          }
+        if (hasOtherPlayable && Math.random() < ai.wild4BluffChance) {
+          return wild4
         }
       }
     }
   }
+
+  const playable = hand.filter((c) => canPlayCard(c, topCard, currentColor, hand))
+  if (playable.length === 0) return null
 
   if (ai.playRandomness > 0 && Math.random() < ai.playRandomness) {
     const safeChoices = playable.filter((c) => c.type !== 'wild4')
@@ -37,9 +40,9 @@ export function findBestCard(
     return pool[Math.floor(Math.random() * pool.length)]
   }
 
-  if (ai.considerOpponent && opponents) {
-    const threatExists = opponents.some((o) => o.handLength <= 2)
-    if (threatExists) {
+  // Only target threats from the next player (the one action cards actually affect)
+  if (ai.considerOpponent && nextPlayerHandLength !== undefined) {
+    if (nextPlayerHandLength <= 2) {
       const offensiveAction = playable.find(
         (c) => c.type === 'draw2' || c.type === 'skip' || c.type === 'reverse'
       )
@@ -49,10 +52,14 @@ export function findBestCard(
 
   const numbers = playable.filter((c) => c.type === 'number')
 
+  // Only play 7 when the swap would be beneficial (target has fewer cards than us)
   if (config.actionCards.sevenORule) {
-    const sevenOrZero = numbers.filter((c) => c.value === 7 || c.value === 0)
-    if (sevenOrZero.length > 0 && hand.length > 3) {
-      return sevenOrZero[0]
+    const seven = numbers.find((c) => c.value === 7)
+    if (seven && opponents && opponents.length > 0) {
+      const maxOpponentHand = Math.max(...opponents.map(o => o.handLength))
+      if (maxOpponentHand < hand.length) {
+        return seven
+      }
     }
   }
 
@@ -103,6 +110,12 @@ export function chooseColor(
     }
   }
 
+  // When hand is empty (e.g. just played last wild card), pick randomly
+  if (maxCount === 0) {
+    const colors: CardColor[] = ['red', 'yellow', 'blue', 'green']
+    return colors[Math.floor(Math.random() * colors.length)]
+  }
+
   if (aiConfig?.colorStrategy === 'best' && discardPile) {
     const discardColorCounts: Record<CardColor, number> = { red: 0, yellow: 0, blue: 0, green: 0 }
     for (const card of discardPile) {
@@ -145,7 +158,7 @@ export function shouldStackDraw(
     if (Math.random() < agg) return draw2s[0]
   }
   if (wild4s.length > 0) {
-    if (Math.random() < agg * 0.7) return wild4s[0]
+    if (Math.random() < agg) return wild4s[0]
   }
 
   return null
@@ -158,13 +171,13 @@ export function shouldChallengeWild4(
 ): boolean {
   if (!config.actionCards.challengeWild4) return false
 
+  if (hand.length === 0) return false
+
   const matchingColorCount = hand.filter(
     (c) => c.color === currentColor && c.type !== 'wild' && c.type !== 'wild4'
   ).length
 
-  if (hand.length === 0) return false
-
-  const probability = (matchingColorCount / hand.length) * 2 * config.ai.challengeAggression - 0.5
+  const probability = (matchingColorCount / hand.length) * config.ai.challengeAggression * 1.5
   return Math.random() < Math.max(0, Math.min(1, probability))
 }
 

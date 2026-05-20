@@ -65,6 +65,15 @@ export function drawCards(
   return { drawn, remaining };
 }
 
+export function ensureNotEmpty(pile: Card[], discardPile: Card[]): { drawPile: Card[]; discardPile: Card[] } {
+  if (pile.length > 0) return { drawPile: pile, discardPile }
+  if (discardPile.length <= 1) return { drawPile: pile, discardPile }
+  const topCard = discardPile[discardPile.length - 1]
+  const rest = discardPile.slice(0, -1)
+  const shuffled = shuffleDeck(rest)
+  return { drawPile: shuffled, discardPile: [topCard] }
+}
+
 export function getCardScore(card: Card, config?: GameConfig): number {
   if (card.type === 'number') {
     if (config && config.scoring.numberCard > 0) {

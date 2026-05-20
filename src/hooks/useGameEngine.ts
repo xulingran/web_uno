@@ -1,27 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/gameStore'
-import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4, shouldBluffWild4 } from '@/utils/ai'
-import { canPlayCard, getActionEffect, getNextPlayerIndex } from '@/utils/rules'
-import { shuffleDeck, drawCards, getCardScore } from '@/utils/deck'
-
-function getCardActionEffectType(card: { type: string; color?: string | null }): { type: string; color?: string } | null {
-  switch (card.type) {
-    case 'draw2': return { type: 'draw2', color: card.color ?? undefined }
-    case 'wild4': return { type: 'wild4' }
-    case 'skip': return { type: 'skip', color: card.color ?? undefined }
-    case 'reverse': return { type: 'reverse', color: card.color ?? undefined }
-    default: return null
-  }
-}
-
-function ensureNotEmpty(pile: Card[], discardPile: Card[]): { drawPile: Card[]; discardPile: Card[] } {
-  if (pile.length > 0) return { drawPile: pile, discardPile }
-  if (discardPile.length <= 1) return { drawPile: pile, discardPile }
-  const topCard = discardPile[discardPile.length - 1]
-  const rest = discardPile.slice(0, -1)
-  const shuffled = shuffleDeck(rest)
-  return { drawPile: shuffled, discardPile: [topCard] }
-}
+import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4 } from '@/utils/ai'
+import { canPlayCard, getActionEffect, getNextPlayerIndex, getCardActionEffectType } from '@/utils/rules'
+import { shuffleDeck, drawCards, getCardScore, ensureNotEmpty } from '@/utils/deck'
 
 import type { Card } from '@/utils/types'
 
@@ -132,7 +113,11 @@ export function useGameEngine() {
         .filter((_, i) => i !== state.currentPlayerIndex)
         .map((p) => ({ handLength: p.hand.length }))
 
-      const bestCard = findBestCard(aiPlayer.hand, topCard, state.currentColor, cfg, opponents)
+      const nextIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, state.players.length, 0)
+      const bestCard = findBestCard(
+        aiPlayer.hand, topCard, state.currentColor, cfg, opponents,
+        state.players[nextIdx].hand.length
+      )
 
       if (bestCard) {
         const cardIndex = aiPlayer.hand.findIndex((c) => c.id === bestCard.id)
@@ -185,6 +170,7 @@ export function useGameEngine() {
                 discardPile: newDiscardPile,
                 cardJustDrawn: null,
                 currentColor: chooseColor(newHand, cfg.ai, newDiscardPile),
+                colorBeforeWild: state.currentColor,
                 lastPlayedBy: { playerIndex: state.currentPlayerIndex, cardId: card.id },
                 lastActionEffect: { type: 'wild4', timestamp: Date.now() },
                 challengePlayerIndex: nNextIdx,
@@ -411,6 +397,7 @@ export function useGameEngine() {
         })
 
         if (foundPlayable && cfg.draw.forcePlay && lastPlayableCard) {
+          // Card is in hand, AI will pick it up on next tick via findBestCard
           processingRef.current = false
           return
         }

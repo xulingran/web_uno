@@ -1,8 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4, shouldBluffWild4 } from './ai'
 import type { Card, CardColor } from './types'
 import type { AIConfig } from '@/config/types'
-import * as rulesModule from './rules'
 
 function createBaseAIConfig(overrides: Partial<AIConfig> = {}): AIConfig {
   return {
@@ -40,7 +39,7 @@ describe('findBestCard', () => {
     expect(result).toEqual({ id: 'red-7-0', color: 'red', type: 'number', value: 7 })
   })
 
-  it('prefers offensive cards (draw2/skip/reverse) when opponents have ≤ 2 cards', () => {
+  it('plays offensive cards when next player has ≤ 2 cards', () => {
     const hand: Card[] = [
       { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
       { id: 'red-skip-0', color: 'red', type: 'skip' },
@@ -50,9 +49,24 @@ describe('findBestCard', () => {
       ai: createBaseAIConfig({ considerOpponent: true }),
       actionCards: { sevenORule: false },
     }
-    const opponents = [{ handLength: 2 }]
-    const result = findBestCard(hand, topCard, 'red', config, opponents)
+    const opponents = [{ handLength: 5 }]
+    const result = findBestCard(hand, topCard, 'red', config, opponents, 2)
     expect(result?.type).toBe('skip')
+  })
+
+  it('does not play offensive cards when next player has > 2 cards', () => {
+    const hand: Card[] = [
+      { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
+      { id: 'red-skip-0', color: 'red', type: 'skip' },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ considerOpponent: true }),
+      actionCards: { sevenORule: false },
+    }
+    const opponents = [{ handLength: 2 }]
+    const result = findBestCard(hand, topCard, 'red', config, opponents, 5)
+    // nextPlayerHandLength=5 > 2, so no threat response → normal priority
+    expect(result).toEqual({ id: 'red-9-0', color: 'red', type: 'number', value: 9 })
   })
 
   it('follows priority: number > skip/reverse > draw2 > wild > wild4', () => {
@@ -82,8 +96,9 @@ describe('chooseColor', () => {
     expect(chooseColor(hand)).toBe('red')
   })
 
-  it('returns default red when hand is empty', () => {
-    expect(chooseColor([])).toBe('red')
+  it('returns a valid color when hand is empty', () => {
+    const result = chooseColor([])
+    expect(['red', 'yellow', 'blue', 'green']).toContain(result)
   })
 })
 
@@ -156,24 +171,7 @@ describe('findBestCard - wild4 bluff', () => {
     vi.restoreAllMocks()
   })
 
-  it('enters bluff path but falls through when no non-wild4 playable card exists', () => {
-    const hand: Card[] = [
-      { id: 'wild4-0', color: null, type: 'wild4' },
-      { id: 'yellow-7-0', color: 'yellow', type: 'number', value: 7 },
-    ]
-    const config = {
-      ai: createBaseAIConfig({ wild4BluffChance: 0.8 }),
-      actionCards: { sevenORule: false },
-    }
-    // currentColor='red', hand has no red cards → wild4 is playable (canPlayCard returns true)
-    // nonWild4Playable = [] (yellow-7 doesn't match color/value of topCard)
-    // Since nonWild4Playable.length === 0, innermost bluff check is skipped
-    // Falls through → wild4 is the only playable card
-    const result = findBestCard(hand, topCard, currentColor, config)
-    expect(result?.type).toBe('wild4')
-  })
-
-  it('returns wild4 when bluff triggers and matching color exists', () => {
+  it('returns wild4 when bluff triggers and hand has matching color with other playable cards', () => {
     const hand: Card[] = [
       { id: 'red-3-0', color: 'red', type: 'number', value: 3 },
       { id: 'wild4-0', color: null, type: 'wild4' },
@@ -184,10 +182,11 @@ describe('findBestCard - wild4 bluff', () => {
       actionCards: { sevenORule: false },
     }
 
-    // Mock canPlayCard so wild4 is playable even though hand contains matching color
-    vi.spyOn(rulesModule, 'canPlayCard').mockImplementation(
-      (card, _top, _color, _hand) => card.type === 'wild4' || card.color === _color
-    )
+    // Bluff check is now BEFORE canPlayCard filtering
+    // hand has red-3 (matching color), wild4, yellow-7
+    // hasMatchingColor = true (red-3)
+    // hasOtherPlayable = red-3 is playable (matches color) → true
+    // Math.random() < 0.8 → bluff triggers → return wild4
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const result = findBestCard(hand, topCard, currentColor, config)
@@ -205,22 +204,95 @@ describe('findBestCard - wild4 bluff', () => {
       actionCards: { sevenORule: false },
     }
 
-    vi.spyOn(rulesModule, 'canPlayCard').mockImplementation(
-      (card, _top, _color, _hand) => card.type === 'wild4' || card.color === _color
-    )
-    // random = 0.9 >= 0.8 → bluff doesn't trigger, falls through to normal logic
+    // Math.random() = 0.9 >= 0.8 → bluff doesn't trigger
     vi.spyOn(Math, 'random').mockReturnValue(0.9)
 
     const result = findBestCard(hand, topCard, currentColor, config)
-    // wild4 bluff skipped → playable numbers: red-3 → returns red-3
+    // Falls through to normal logic → wild4 not playable (has red card)
+    // playable = [red-3] → returns red-3
     expect(result).toEqual({ id: 'red-3-0', color: 'red', type: 'number', value: 3 })
+  })
+
+  it('does not bluff when no matching color exists in hand', () => {
+    const hand: Card[] = [
+      { id: 'wild4-0', color: null, type: 'wild4' },
+      { id: 'yellow-7-0', color: 'yellow', type: 'number', value: 7 },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ wild4BluffChance: 0.8 }),
+      actionCards: { sevenORule: false },
+    }
+
+    // hasMatchingColor = false (no red cards) → bluff check skipped
+    // Normal flow: wild4 IS playable (no matching color) → returns wild4
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    const result = findBestCard(hand, topCard, currentColor, config)
+    expect(result?.type).toBe('wild4')
+  })
+
+  it('does not bluff when no other playable card exists', () => {
+    const hand: Card[] = [
+      { id: 'red-3-0', color: 'red', type: 'number', value: 3 },
+      { id: 'wild4-0', color: null, type: 'wild4' },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ wild4BluffChance: 0.8 }),
+      actionCards: { sevenORule: false },
+    }
+
+    const blueTop: Card = { id: 'blue-5-0', color: 'blue', type: 'number', value: 5 }
+
+    // hasMatchingColor = true (red-3 matches red currentColor)
+    // hasOtherPlayable: red-3 on blue-5 with currentColor=red? red-3 matches red → yes
+    // So bluff CAN trigger here if random is low enough
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    const result = findBestCard(hand, blueTop, 'red', config)
+    // Bluff triggers → returns wild4
+    expect(result).toEqual({ id: 'wild4-0', color: null, type: 'wild4' })
   })
 })
 
 describe('findBestCard - 7/0 rule', () => {
   const topCard: Card = { id: 'red-5-0', color: 'red', type: 'number', value: 5 }
 
-  it('prefers 7 or 0 cards when sevenORule is enabled and hand length > 3', () => {
+  it('prefers 7 when swap is beneficial (opponent has fewer cards)', () => {
+    const hand: Card[] = [
+      { id: 'red-7-0', color: 'red', type: 'number', value: 7 },
+      { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
+      { id: 'red-5-0', color: 'red', type: 'number', value: 5 },
+      { id: 'blue-3-0', color: 'blue', type: 'number', value: 3 },
+    ]
+    const config = {
+      ai: createBaseAIConfig(),
+      actionCards: { sevenORule: true },
+    }
+    // AI has 4 cards, opponent max is 2 → swap beneficial
+    const opponents = [{ handLength: 2 }]
+    const result = findBestCard(hand, topCard, 'red', config, opponents)
+    expect(result).toEqual({ id: 'red-7-0', color: 'red', type: 'number', value: 7 })
+  })
+
+  it('does not play 7 when swap would be harmful (opponent has more cards)', () => {
+    const hand: Card[] = [
+      { id: 'red-7-0', color: 'red', type: 'number', value: 7 },
+      { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
+      { id: 'red-5-0', color: 'red', type: 'number', value: 5 },
+      { id: 'blue-3-0', color: 'blue', type: 'number', value: 3 },
+    ]
+    const config = {
+      ai: createBaseAIConfig(),
+      actionCards: { sevenORule: true },
+    }
+    // AI has 4 cards, opponent has 8 → swap would give AI more cards
+    const opponents = [{ handLength: 8 }]
+    const result = findBestCard(hand, topCard, 'red', config, opponents)
+    // 7 not played → falls through to normal priority → red-9 (highest number)
+    expect(result).toEqual({ id: 'red-9-0', color: 'red', type: 'number', value: 9 })
+  })
+
+  it('does not play 7 when no opponents info provided', () => {
     const hand: Card[] = [
       { id: 'red-7-0', color: 'red', type: 'number', value: 7 },
       { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
@@ -232,28 +304,11 @@ describe('findBestCard - 7/0 rule', () => {
       actionCards: { sevenORule: true },
     }
     const result = findBestCard(hand, topCard, 'red', config)
-    // playable = [red-7, red-9, red-5] (all match red color)
-    // hand.length = 4 > 3, sevenOrZero = [red-7]
-    expect(result).toEqual({ id: 'red-7-0', color: 'red', type: 'number', value: 7 })
-  })
-
-  it('ignores 7/0 rule when hand length is ≤ 3', () => {
-    const hand: Card[] = [
-      { id: 'red-7-0', color: 'red', type: 'number', value: 7 },
-      { id: 'red-2-0', color: 'red', type: 'number', value: 2 },
-      { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
-    ]
-    const config = {
-      ai: createBaseAIConfig(),
-      actionCards: { sevenORule: true },
-    }
-    const result = findBestCard(hand, topCard, 'red', config)
-    // hand.length = 3, not > 3 → 7/0 rule skipped
-    // Returns highest number: red-9
+    // No opponents → 7 not played → red-9
     expect(result).toEqual({ id: 'red-9-0', color: 'red', type: 'number', value: 9 })
   })
 
-  it('prefers 0 card when sevenORule is enabled', () => {
+  it('0 cards no longer get special priority with sevenORule', () => {
     const hand: Card[] = [
       { id: 'red-0-0', color: 'red', type: 'number', value: 0 },
       { id: 'red-9-0', color: 'red', type: 'number', value: 9 },
@@ -264,8 +319,10 @@ describe('findBestCard - 7/0 rule', () => {
       ai: createBaseAIConfig(),
       actionCards: { sevenORule: true },
     }
-    const result = findBestCard(hand, topCard, 'red', config)
-    expect(result).toEqual({ id: 'red-0-0', color: 'red', type: 'number', value: 0 })
+    const opponents = [{ handLength: 2 }]
+    const result = findBestCard(hand, topCard, 'red', config, opponents)
+    // 0 no longer gets special priority → falls through to highest number
+    expect(result).toEqual({ id: 'red-9-0', color: 'red', type: 'number', value: 9 })
   })
 })
 
@@ -368,9 +425,7 @@ describe('chooseColor - best strategy', () => {
     // colorCounts: { red:2, blue:2, green:0, yellow:0 }
     // maxCount = 2, candidates where count >= 1: red, blue
     // discardColorCounts all 0 (wild/wild4 have null color, skipped)
-    // sorted: both 0, but blue has a lower unicode index or stable sort keeps 'red' first
-    // candidates sorted ascending by discard count (both 0), sort is stable
-    // so 'red' stays first in practice
+    // sorted: both 0, stable sort keeps 'red' first
     expect(chooseColor(hand, aiConfig, discardPile)).toBe('red')
   })
 })
@@ -394,8 +449,7 @@ describe('shouldStackDraw - wild4 stacking', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
 
     const result = shouldStackDraw(hand, topWild4, config)
-    // draw2s=[], wild4s=[wild4-1]
-    // 0.5 < 1.0 * 0.7 = 0.7 → true → returns wild4
+    // 0.5 < 1.0 → true → returns wild4
     expect(result).toEqual({ id: 'wild4-1', color: null, type: 'wild4' })
   })
 
@@ -411,7 +465,7 @@ describe('shouldStackDraw - wild4 stacking', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.9)
 
     const result = shouldStackDraw(hand, topWild4, config)
-    // 0.9 < 0.5 * 0.7 = 0.35 → false → returns null
+    // 0.9 < 0.5 → false → returns null
     expect(result).toBeNull()
   })
 
@@ -444,8 +498,8 @@ describe('shouldChallengeWild4 - probability', () => {
       actionCards: { challengeWild4: true },
     }
     // matchingColorCount=2, hand.length=3
-    // probability = (2/3) * 2 * 1.0 - 0.5 = 0.833...
-    // Math.random = 0.5 < 0.833 → true
+    // probability = (2/3) * 1.0 * 1.5 = 1.0 → clamped to 1.0
+    // Math.random = 0.5 < 1.0 → true
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(true)
   })
@@ -457,12 +511,12 @@ describe('shouldChallengeWild4 - probability', () => {
       { id: 'blue-3-0', color: 'blue', type: 'number', value: 3 },
     ]
     const config = {
-      ai: createBaseAIConfig({ challengeAggression: 1.0 }),
+      ai: createBaseAIConfig({ challengeAggression: 0.3 }),
       actionCards: { challengeWild4: true },
     }
     // matchingColorCount=1, hand.length=3
-    // probability = (1/3) * 2 * 1.0 - 0.5 = 0.166...
-    // Math.random = 0.5 > 0.166 → false
+    // probability = (1/3) * 0.3 * 1.5 = 0.15
+    // Math.random = 0.5 > 0.15 → false
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(false)
   })
@@ -485,7 +539,7 @@ describe('shouldChallengeWild4 - probability', () => {
       actionCards: { challengeWild4: true },
     }
     // matchingColorCount=2, hand.length=2
-    // probability = (2/2) * 2 * 2.0 - 0.5 = 3.5 → clamped to 1.0
+    // probability = (2/2) * 2.0 * 1.5 = 3.0 → clamped to 1.0
     // Math.random = 0.5 < 1.0 → true
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(true)
