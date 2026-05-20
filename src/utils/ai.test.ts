@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4, shouldBluffWild4 } from './ai'
+import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4 } from './ai'
 import type { Card, CardColor } from './types'
 import type { AIConfig } from '@/config/types'
 
@@ -150,16 +150,6 @@ describe('shouldChallengeWild4', () => {
       actionCards: { challengeWild4: false },
     }
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(false)
-  })
-})
-
-describe('shouldBluffWild4', () => {
-  it('returns false when wild4BluffChance is 0', () => {
-    const hand: Card[] = [
-      { id: 'red-1-0', color: 'red', type: 'number', value: 1 },
-    ]
-    const aiConfig = createBaseAIConfig({ wild4BluffChance: 0 })
-    expect(shouldBluffWild4(hand, 'red', aiConfig)).toBe(false)
   })
 })
 
@@ -480,6 +470,60 @@ describe('shouldStackDraw - wild4 stacking', () => {
 
     expect(shouldStackDraw(hand, topWild4, config)).toBeNull()
   })
+
+  it('uses stackAggression*0.7 for wild4 threshold (not raw stackAggression)', () => {
+    const hand: Card[] = [
+      { id: 'wild4-1', color: null, type: 'wild4' },
+      { id: 'draw2-1', color: 'red', type: 'draw2' },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ stackAggression: 1.0 }),
+      actionCards: { stackingDraw2: true, stackingDraw4: true },
+    }
+
+    // random=0.8: draw2 passes (0.8 < 1.0) but wild4 fails (0.8 > 0.7)
+    // draw2 is checked first, so it should return draw2 before reaching wild4
+    vi.spyOn(Math, 'random').mockReturnValue(0.8)
+
+    const topDraw2: Card = { id: 'blue-draw2-0', color: 'blue', type: 'draw2' }
+    const result = shouldStackDraw(hand, topDraw2, config)
+    // draw2: 0.8 < 1.0 → passes → returns draw2
+    expect(result).toEqual({ id: 'draw2-1', color: 'red', type: 'draw2' })
+  })
+
+  it('wild4 stacking fails when random falls between agg*0.7 and agg threshold', () => {
+    const hand: Card[] = [
+      { id: 'wild4-1', color: null, type: 'wild4' },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ stackAggression: 1.0 }),
+      actionCards: { stackingDraw2: false, stackingDraw4: true },
+    }
+
+    // stackAggression=1.0 → wild4 threshold = 1.0*0.7 = 0.7
+    // random=0.75 > 0.7 → should NOT stack
+    vi.spyOn(Math, 'random').mockReturnValue(0.75)
+
+    const result = shouldStackDraw(hand, topWild4, config)
+    expect(result).toBeNull()
+  })
+
+  it('wild4 stacking succeeds when random is well below agg*0.7 threshold', () => {
+    const hand: Card[] = [
+      { id: 'wild4-1', color: null, type: 'wild4' },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ stackAggression: 1.0 }),
+      actionCards: { stackingDraw2: false, stackingDraw4: true },
+    }
+
+    // stackAggression=1.0 → wild4 threshold = 1.0*0.7 = 0.7
+    // random=0.6 < 0.7 → should stack
+    vi.spyOn(Math, 'random').mockReturnValue(0.6)
+
+    const result = shouldStackDraw(hand, topWild4, config)
+    expect(result).toEqual({ id: 'wild4-1', color: null, type: 'wild4' })
+  })
 })
 
 describe('shouldChallengeWild4 - probability', () => {
@@ -498,7 +542,7 @@ describe('shouldChallengeWild4 - probability', () => {
       actionCards: { challengeWild4: true },
     }
     // matchingColorCount=2, hand.length=3
-    // probability = (2/3) * 1.0 * 1.5 = 1.0 → clamped to 1.0
+    // probability = (2/3) * 1.0 * 2 = 1.33 → clamped to 1.0
     // Math.random = 0.5 < 1.0 → true
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(true)
@@ -515,8 +559,8 @@ describe('shouldChallengeWild4 - probability', () => {
       actionCards: { challengeWild4: true },
     }
     // matchingColorCount=1, hand.length=3
-    // probability = (1/3) * 0.3 * 1.5 = 0.15
-    // Math.random = 0.5 > 0.15 → false
+    // probability = (1/3) * 0.3 * 2 = 0.2
+    // Math.random = 0.5 > 0.2 → false
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(false)
   })
@@ -539,31 +583,67 @@ describe('shouldChallengeWild4 - probability', () => {
       actionCards: { challengeWild4: true },
     }
     // matchingColorCount=2, hand.length=2
-    // probability = (2/2) * 2.0 * 1.5 = 3.0 → clamped to 1.0
+    // probability = (2/2) * 2.0 * 2 = 4.0 → clamped to 1.0
     // Math.random = 0.5 < 1.0 → true
     vi.spyOn(Math, 'random').mockReturnValue(0.5)
     expect(shouldChallengeWild4(hand, 'red', config)).toBe(true)
   })
-})
 
-describe('shouldBluffWild4 - probability', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('returns true when random is below bluff chance', () => {
+  it('uses multiplier 2.0 — discriminates from old 1.5 multiplier', () => {
     const hand: Card[] = [
       { id: 'red-1-0', color: 'red', type: 'number', value: 1 },
+      { id: 'red-2-0', color: 'red', type: 'number', value: 2 },
+      { id: 'blue-3-0', color: 'blue', type: 'number', value: 3 },
+      { id: 'blue-4-0', color: 'blue', type: 'number', value: 4 },
     ]
-    vi.spyOn(Math, 'random').mockReturnValue(0.3)
-    expect(shouldBluffWild4(hand, 'red', createBaseAIConfig({ wild4BluffChance: 0.8 }))).toBe(true)
+    const config = {
+      ai: createBaseAIConfig({ challengeAggression: 1.0 }),
+      actionCards: { challengeWild4: true },
+    }
+    // matchingColorCount=2, hand.length=4 → ratio=0.5
+    // with multiplier 1.5: 0.5 * 1.0 * 1.5 = 0.75 → random=0.8 → false
+    // with multiplier 2.0: 0.5 * 1.0 * 2 = 1.0  → random=0.8 → true
+    // This test proves the multiplier is exactly 2.0, not 1.5
+    vi.spyOn(Math, 'random').mockReturnValue(0.8)
+    expect(shouldChallengeWild4(hand, 'red', config)).toBe(true)
   })
 
-  it('returns false when random is above bluff chance', () => {
+  it('multiplier 2.0 produces correct probability at medium aggression', () => {
     const hand: Card[] = [
       { id: 'red-1-0', color: 'red', type: 'number', value: 1 },
+      { id: 'red-2-0', color: 'red', type: 'number', value: 2 },
+      { id: 'blue-3-0', color: 'blue', type: 'number', value: 3 },
+      { id: 'blue-4-0', color: 'blue', type: 'number', value: 4 },
+      { id: 'yellow-5-0', color: 'yellow', type: 'number', value: 5 },
     ]
-    vi.spyOn(Math, 'random').mockReturnValue(0.9)
-    expect(shouldBluffWild4(hand, 'red', createBaseAIConfig({ wild4BluffChance: 0.8 }))).toBe(false)
+    const config = {
+      ai: createBaseAIConfig({ challengeAggression: 0.8 }),
+      actionCards: { challengeWild4: true },
+    }
+    // matchingColorCount=2, hand.length=5 → ratio=0.4
+    // probability = 0.4 * 0.8 * 2 = 0.64
+    // with old 1.5: 0.4 * 0.8 * 1.5 = 0.48 → random=0.5 → false
+    // with new 2.0: 0.4 * 0.8 * 2 = 0.64   → random=0.5 → true
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    expect(shouldChallengeWild4(hand, 'red', config)).toBe(true)
+  })
+
+  it('multiplier 2.0 still respects low aggression for weak evidence', () => {
+    const hand: Card[] = [
+      { id: 'red-1-0', color: 'red', type: 'number', value: 1 },
+      { id: 'blue-2-0', color: 'blue', type: 'number', value: 2 },
+      { id: 'blue-3-0', color: 'blue', type: 'number', value: 3 },
+      { id: 'blue-4-0', color: 'blue', type: 'number', value: 4 },
+      { id: 'blue-5-0', color: 'blue', type: 'number', value: 5 },
+    ]
+    const config = {
+      ai: createBaseAIConfig({ challengeAggression: 0.3 }),
+      actionCards: { challengeWild4: true },
+    }
+    // matchingColorCount=1, hand.length=5 → ratio=0.2
+    // probability = 0.2 * 0.3 * 2 = 0.12
+    // random=0.5 > 0.12 → false
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    expect(shouldChallengeWild4(hand, 'red', config)).toBe(false)
   })
 })

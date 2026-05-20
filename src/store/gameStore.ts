@@ -317,7 +317,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       }
     }
 
-    if (newHand.length === 0) {
+    if (newPlayers[playingPlayerIndex].hand.length === 0) {
       const newScores = [...state.scores]
       const winnerIdx = playingPlayerIndex
       let totalPoints = 0

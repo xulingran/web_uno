@@ -249,7 +249,7 @@ export function useGameEngine() {
           }
         }
 
-        if (newHand.length === 0) {
+        if (newPlayers[state.currentPlayerIndex].hand.length === 0) {
           const newScores = [...state.scores]
           let totalPoints = 0
           for (let i = 0; i < newPlayers.length; i++) {

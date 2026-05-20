@@ -158,7 +158,7 @@ export function shouldStackDraw(
     if (Math.random() < agg) return draw2s[0]
   }
   if (wild4s.length > 0) {
-    if (Math.random() < agg) return wild4s[0]
+    if (Math.random() < agg * 0.7) return wild4s[0]
   }
 
   return null
@@ -177,16 +177,6 @@ export function shouldChallengeWild4(
     (c) => c.color === currentColor && c.type !== 'wild' && c.type !== 'wild4'
   ).length
 
-  const probability = (matchingColorCount / hand.length) * config.ai.challengeAggression * 1.5
+  const probability = (matchingColorCount / hand.length) * config.ai.challengeAggression * 2
   return Math.random() < Math.max(0, Math.min(1, probability))
-}
-
-export function shouldBluffWild4(
-  hand: Card[],
-  currentColor: CardColor,
-  aiConfig: AIConfig
-): boolean {
-  if (aiConfig.wild4BluffChance <= 0) return false
-
-  return Math.random() < aiConfig.wild4BluffChance
 }
