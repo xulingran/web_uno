@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, RotateCcw } from 'lucide-react'
 import { useConfigStore } from '@/store/configStore'
 import { PRESETS } from '@/config/presets'
-import type { GameConfig, PresetName } from '@/config/types'
+import { DIFFICULTY_CONFIGS } from '@/config/defaults'
+import type { GameConfig, PresetName, Difficulty } from '@/config/types'
 
 interface SettingsPanelProps {
   compact?: boolean
@@ -24,6 +25,14 @@ const GROUPS: GroupDef[] = [
   { key: 'uno', label: 'UNO 规则', defaultOpen: false },
   { key: 'scoring', label: '计分', defaultOpen: false },
 ]
+
+const DIFFICULTY_LABELS: Record<Difficulty, string> = {
+  easy: '简单',
+  medium: '中等',
+  hard: '困难',
+}
+
+const DIFFICULTY_ORDER: Difficulty[] = ['easy', 'medium', 'hard']
 
 export default function SettingsPanel({ compact, onStartGame }: SettingsPanelProps) {
   const config = useConfigStore((s) => s.config)
@@ -47,6 +56,10 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
 
   const handlePresetChange = (name: string) => {
     applyPreset(name as PresetName)
+  }
+
+  const handleDifficultyChange = (difficulty: Difficulty) => {
+    updateParam('ai', DIFFICULTY_CONFIGS[difficulty])
   }
 
   const renderToggle = (label: string, group: keyof GameConfig, field: string) => (
@@ -105,6 +118,22 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
               }`}
             >
               {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2 justify-center items-center">
+          <span className="text-white/60 text-xs">AI 难度:</span>
+          {DIFFICULTY_ORDER.map((d) => (
+            <button
+              key={d}
+              onClick={() => handleDifficultyChange(d)}
+              className={`px-3 py-1 rounded-lg font-game text-xs transition-all ${
+                config.ai.difficulty === d
+                  ? 'bg-yellow-400 text-black'
+                  : 'bg-white/10 text-white/60 hover:bg-white/20'
+              }`}
+            >
+              {DIFFICULTY_LABELS[d]}
             </button>
           ))}
         </div>
@@ -185,6 +214,24 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
                   {renderNumber('AI 数量', 'params', 'aiPlayerCount', 1, 5)}
                   {renderNumber('目标分数 (0=不限)', 'params', 'targetScore', 0, 9999)}
                   {renderNumber('回合限时秒 (0=不限)', 'params', 'turnTimeLimit', 0, 300)}
+                  <div className="flex items-center justify-between py-2 px-1">
+                    <span className="text-white/80 text-sm">AI 难度</span>
+                    <div className="flex gap-1">
+                      {DIFFICULTY_ORDER.map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => handleDifficultyChange(d)}
+                          className={`px-3 py-1 rounded-lg font-game text-xs transition-all ${
+                            config.ai.difficulty === d
+                              ? 'bg-yellow-400 text-black'
+                              : 'bg-white/10 text-white/60 hover:bg-white/20'
+                          }`}
+                        >
+                          {DIFFICULTY_LABELS[d]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </>
               )}
               {group.key === 'actionCards' && (

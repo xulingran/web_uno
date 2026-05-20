@@ -57,6 +57,16 @@ export function canJumpIn(card: Card, topCard: Card | null, currentColor: CardCo
   return false
 }
 
+export function getCardActionEffectType(card: { type: string; color?: string | null }): { type: string; color?: string } | null {
+  switch (card.type) {
+    case 'draw2': return { type: 'draw2', color: card.color ?? undefined }
+    case 'wild4': return { type: 'wild4' }
+    case 'skip': return { type: 'skip', color: card.color ?? undefined }
+    case 'reverse': return { type: 'reverse', color: card.color ?? undefined }
+    default: return null
+  }
+}
+
 export function getActionEffect(card: Card, numPlayers: number, reverseAsSkip: boolean): ActionEffect {
   switch (card.type) {
     case 'skip':
