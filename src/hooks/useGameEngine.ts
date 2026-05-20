@@ -80,7 +80,7 @@ export function useGameEngine() {
           }
           useGameStore.setState(allUpdates)
 
-          useGameStore.getState().advanceTurn(2)
+          useGameStore.getState().advanceTurn(1)
           processingRef.current = false
           return
         }
@@ -294,7 +294,7 @@ export function useGameEngine() {
             useGameStore.setState({ unoCalledPlayer: aiPlayer.id })
           }
 
-          useGameStore.getState().advanceTurn(card.type === 'wild4' ? 2 : 1)
+          useGameStore.getState().advanceTurn(1)
           processingRef.current = false
           return
         }
