@@ -50,14 +50,15 @@ vi.mock('@/store/gameStore', () => {
     advanceTurn: vi.fn(),
   }
 
-  const useGameStore = ((selector: ((state: typeof mockState) => unknown) | undefined) => {
-    if (typeof selector === 'function') {
-      return selector(mockState)
-    }
-    return mockState
-  }) as unknown as ReturnType<typeof import('@/store/gameStore')['useGameStore']>
-
-  useGameStore.getState = () => mockState
+  const useGameStore = Object.assign(
+    (selector: ((state: typeof mockState) => unknown) | undefined) => {
+      if (typeof selector === 'function') {
+        return selector(mockState)
+      }
+      return mockState
+    },
+    { getState: () => mockState }
+  )
 
   return { useGameStore }
 })
