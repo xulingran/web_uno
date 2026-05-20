@@ -42,7 +42,7 @@ describe('configStore', () => {
     const config = useConfigStore.getState().config
     expect(config.actionCards.stackingDraw2).toBe(true)
     expect(config.actionCards.stackingDraw4).toBe(false)
-    expect(config.actionCards.challengeWild4).toBe(false)
+    expect(config.actionCards.challengeWild4).toBe(true)
   })
 
   it("applyPreset('casual') — config.draw.drawToMatch 变为 true（休闲娱乐预设的特点）", () => {

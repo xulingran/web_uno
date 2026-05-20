@@ -42,8 +42,8 @@ describe('DEFAULT_CONFIG', () => {
       expect(DEFAULT_CONFIG.actionCards.stackingDraw4).toBe(false)
     })
 
-    it('challengeWild4 为 false', () => {
-      expect(DEFAULT_CONFIG.actionCards.challengeWild4).toBe(false)
+    it('challengeWild4 为 true', () => {
+      expect(DEFAULT_CONFIG.actionCards.challengeWild4).toBe(true)
     })
 
     it('reverseAsSkip 为 true', () => {
@@ -247,7 +247,7 @@ describe('loadConfig', () => {
 
     expect(config.actionCards.stackingDraw2).toBe(true)
     expect(config.actionCards.stackingDraw4).toBe(false)
-    expect(config.actionCards.challengeWild4).toBe(false)
+    expect(config.actionCards.challengeWild4).toBe(true)
     expect(config.actionCards.reverseAsSkip).toBe(true)
     expect(config.actionCards.jumpIn).toBe(false)
     expect(config.actionCards.sevenORule).toBe(false)

@@ -40,7 +40,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   actionCards: {
     stackingDraw2: false,
     stackingDraw4: false,
-    challengeWild4: false,
+    challengeWild4: true,
     reverseAsSkip: true,
     jumpIn: false,
     sevenORule: false,

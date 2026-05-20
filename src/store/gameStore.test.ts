@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useGameStore } from './gameStore'
 import { useConfigStore } from './configStore'
 import { DEFAULT_CONFIG } from '@/config/defaults'
-import type { Card } from '@/utils/types'
+import type { Card, CardColor } from '@/utils/types'
 import * as deckModule from '@/utils/deck'
 
 describe('gameStore', () => {
@@ -322,5 +322,127 @@ describe('gameStore', () => {
     useGameStore.getState().playCard('red-skip-0')
 
     expect(useGameStore.getState().currentPlayerIndex).toBe(2)
+  })
+
+  it('playCard — 打出 Draw2 后下家摸2张且回合被跳过 (3人局, currentPlayerIndex 0→2)', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'red-draw2-0', color: 'red', type: 'draw2' },
+            { id: 'blue-3', color: 'blue', type: 'number', value: 3 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [{ id: 'blue-2', color: 'blue', type: 'number', value: 2 }], isHuman: false },
+        { id: 'p2', name: '电脑B', hand: [{ id: 'green-3', color: 'green', type: 'number', value: 3 }], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      discardPile: [{ id: 'red-3', color: 'red', type: 'number', value: 3 }],
+      drawPile: [
+        { id: 'y1', color: 'yellow', type: 'number', value: 1 },
+        { id: 'y2', color: 'yellow', type: 'number', value: 2 },
+      ],
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0, 0],
+    })
+
+    const handLenBefore = useGameStore.getState().players[1].hand.length
+    useGameStore.getState().playCard('red-draw2-0')
+
+    const state = useGameStore.getState()
+    expect(state.players[1].hand.length).toBe(handLenBefore + 2)
+    expect(state.pendingDrawCount).toBe(0)
+    expect(state.currentPlayerIndex).toBe(2)
+    expect(state.phase).toBe('playing')
+  })
+
+  it('playCard — 打出 Wild4 后下家摸4张且回合被跳过 (3人局顺时针, currentPlayerIndex 0→2)', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'wild4-0', color: null, type: 'wild4' },
+            { id: 'yellow-3', color: 'yellow', type: 'number', value: 3 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [{ id: 'red-2', color: 'red', type: 'number', value: 2 }], isHuman: false },
+        { id: 'p2', name: '电脑B', hand: [{ id: 'blue-3', color: 'blue', type: 'number', value: 3 }], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'blue',
+      discardPile: [{ id: 'blue-5', color: 'blue', type: 'number', value: 5 }],
+      drawPile: [
+        { id: 'g1', color: 'green', type: 'number', value: 1 },
+        { id: 'g2', color: 'green', type: 'number', value: 2 },
+        { id: 'g3', color: 'green', type: 'number', value: 3 },
+        { id: 'g4', color: 'green', type: 'number', value: 4 },
+      ],
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0, 0],
+      lastPlayedBy: null,
+      colorBeforeWild: null,
+    })
+
+    const handLenBefore = useGameStore.getState().players[1].hand.length
+
+    useGameStore.getState().playCard('wild4-0')
+
+    let state = useGameStore.getState()
+    expect(state.phase).toBe('color-picking')
+    expect(state.currentPlayerIndex).toBe(0)
+
+    useGameStore.getState().pickColor('red' as CardColor)
+
+    state = useGameStore.getState()
+    expect(state.players[1].hand.length).toBe(handLenBefore + 4)
+    expect(state.pendingDrawCount).toBe(0)
+    expect(state.currentPlayerIndex).toBe(2)
+    expect(state.phase).toBe('playing')
+  })
+
+  it('playCard — 打出 Draw2 后下家摸2张且回合被跳过 (2人局, currentPlayerIndex 0→0 回到自己)', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'red-draw2-0', color: 'red', type: 'draw2' },
+            { id: 'blue-3', color: 'blue', type: 'number', value: 3 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [{ id: 'blue-2', color: 'blue', type: 'number', value: 2 }], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      discardPile: [{ id: 'red-3', color: 'red', type: 'number', value: 3 }],
+      drawPile: [
+        { id: 'y1', color: 'yellow', type: 'number', value: 1 },
+        { id: 'y2', color: 'yellow', type: 'number', value: 2 },
+      ],
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0],
+    })
+
+    const handLenBefore = useGameStore.getState().players[1].hand.length
+    useGameStore.getState().playCard('red-draw2-0')
+
+    const state = useGameStore.getState()
+    expect(state.players[1].hand.length).toBe(handLenBefore + 2)
+    expect(state.pendingDrawCount).toBe(0)
+    expect(state.currentPlayerIndex).toBe(0)
+    expect(state.phase).toBe('playing')
+  })
+
+  it('配置校验 — 默认配置中 challengeWild4 已开启', () => {
+    expect(DEFAULT_CONFIG.actionCards.challengeWild4).toBe(true)
   })
 })

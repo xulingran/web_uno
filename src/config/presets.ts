@@ -8,7 +8,7 @@ export const PRESETS: PresetConfig[] = [
     config: {
       params: { initialHandSize: 7, aiPlayerCount: 2, targetScore: 0, turnTimeLimit: 0 },
       actionCards: {
-        stackingDraw2: false, stackingDraw4: false, challengeWild4: false,
+        stackingDraw2: false, stackingDraw4: false, challengeWild4: true,
         reverseAsSkip: true, jumpIn: false, sevenORule: false,
       },
       draw: { drawToMatch: false, forcePlay: false, multiDrawCount: 1 },
