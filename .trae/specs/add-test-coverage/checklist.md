@@ -1,0 +1,18 @@
+- [x] Vitest 依赖已安装（vitest, @testing-library/react, @testing-library/jest-dom, @testing-library/user-event, jsdom, @vitest/coverage-v8）
+- [x] vite.config.ts 包含 test 配置（environment: 'jsdom', globals: true, coverage 阈值）
+- [x] package.json 包含 test / test:coverage / test:run 脚本
+- [x] deck.test.ts 覆盖 createDeck / shuffleDeck / dealCards / drawCards / getCardScore
+- [x] rules.test.ts 覆盖 canPlayCard / getNextPlayerIndex / getActionEffect / canStack / canJumpIn
+- [x] ai.test.ts 覆盖 findBestCard / chooseColor / shouldStackDraw / shouldChallengeWild4
+- [x] layout.test.ts 覆盖 distributeAIPlayers
+- [x] defaults.test.ts 覆盖 DEFAULT_CONFIG / loadConfig / deepMerge / DIFFICULTY_CONFIGS
+- [x] presets.test.ts 覆盖 PRESETS / getPresetConfig
+- [x] configStore.test.ts 覆盖 updateParam / applyPreset / resetToDefaults
+- [x] gameStore.test.ts 覆盖 initGame / playCard / drawCard / pickColor / startNewGame
+- [x] Card.test.tsx 测试数字牌和功能牌渲染
+- [x] CardBack.test.tsx 测试卡背渲染
+- [x] ColorPicker.test.tsx 测试颜色选项渲染和点击
+- [x] GameBoard.test.tsx 测试页面挂载
+- [x] `npm run test:run` 所有测试通过
+- [x] `npm run test:coverage` 行覆盖率 ≥ 60%
+- [x] `npm run test:coverage` 分支覆盖率 ≥ 50%

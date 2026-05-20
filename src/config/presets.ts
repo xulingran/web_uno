@@ -1,4 +1,5 @@
 import type { PresetConfig } from './types'
+import { DIFFICULTY_CONFIGS } from './defaults'
 
 export const PRESETS: PresetConfig[] = [
   {
@@ -14,6 +15,7 @@ export const PRESETS: PresetConfig[] = [
       draw: { drawToMatch: false, forcePlay: false, multiDrawCount: 1 },
       uno: { requireUNOCall: true, unoPenaltyDraw: 2, autoDetectUNO: true },
       scoring: { numberCard: 0, actionCard: 20, wildCard: 50 },
+      ai: DIFFICULTY_CONFIGS.medium,
     },
   },
   {
@@ -29,6 +31,7 @@ export const PRESETS: PresetConfig[] = [
       draw: { drawToMatch: true, forcePlay: true, multiDrawCount: 1 },
       uno: { requireUNOCall: false, unoPenaltyDraw: 0, autoDetectUNO: false },
       scoring: { numberCard: 0, actionCard: 20, wildCard: 50 },
+      ai: DIFFICULTY_CONFIGS.easy,
     },
   },
   {
@@ -44,6 +47,7 @@ export const PRESETS: PresetConfig[] = [
       draw: { drawToMatch: false, forcePlay: true, multiDrawCount: 1 },
       uno: { requireUNOCall: true, unoPenaltyDraw: 4, autoDetectUNO: true },
       scoring: { numberCard: 0, actionCard: 20, wildCard: 50 },
+      ai: DIFFICULTY_CONFIGS.hard,
     },
   },
 ]

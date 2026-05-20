@@ -1,4 +1,34 @@
-import type { GameConfig } from './types'
+import type { GameConfig, Difficulty } from './types'
+
+export const DIFFICULTY_CONFIGS: Record<Difficulty, GameConfig['ai']> = {
+  easy: {
+    difficulty: 'easy',
+    playRandomness: 0.4,
+    stackAggression: 0.3,
+    challengeAggression: 0.3,
+    wild4BluffChance: 0,
+    considerOpponent: false,
+    colorStrategy: 'most',
+  },
+  medium: {
+    difficulty: 'medium',
+    playRandomness: 0.1,
+    stackAggression: 0.6,
+    challengeAggression: 0.7,
+    wild4BluffChance: 0.15,
+    considerOpponent: true,
+    colorStrategy: 'most',
+  },
+  hard: {
+    difficulty: 'hard',
+    playRandomness: 0,
+    stackAggression: 0.85,
+    challengeAggression: 1.0,
+    wild4BluffChance: 0.35,
+    considerOpponent: true,
+    colorStrategy: 'best',
+  },
+}
 
 export const DEFAULT_CONFIG: GameConfig = {
   params: {
@@ -30,6 +60,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     actionCard: 20,
     wildCard: 50,
   },
+  ai: DIFFICULTY_CONFIGS.medium,
 }
 
 const STORAGE_KEY = 'uno-game-config'

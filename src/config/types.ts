@@ -1,5 +1,19 @@
 export type CardColor = 'red' | 'yellow' | 'blue' | 'green'
 
+export type Difficulty = 'easy' | 'medium' | 'hard'
+
+export type ColorStrategy = 'most' | 'best'
+
+export interface AIConfig {
+  difficulty: Difficulty
+  playRandomness: number
+  stackAggression: number
+  challengeAggression: number
+  wild4BluffChance: number
+  considerOpponent: boolean
+  colorStrategy: ColorStrategy
+}
+
 export interface ScoreConfig {
   numberCard: number
   actionCard: number
@@ -40,6 +54,7 @@ export interface GameConfig {
   draw: DrawConfig
   uno: UNOConfig
   scoring: ScoreConfig
+  ai: AIConfig
 }
 
 export type PresetName = 'classic' | 'casual' | 'hardcore' | 'custom'

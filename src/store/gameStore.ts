@@ -147,6 +147,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     draw: { drawToMatch: false, forcePlay: false, multiDrawCount: 1 },
     uno: { requireUNOCall: true, unoPenaltyDraw: 2, autoDetectUNO: true },
     scoring: { numberCard: 0, actionCard: 20, wildCard: 50 },
+    ai: { difficulty: 'medium', playRandomness: 0.1, stackAggression: 0.6, challengeAggression: 0.7, wild4BluffChance: 0.15, considerOpponent: true, colorStrategy: 'most' },
   },
   unoCalledPlayer: null,
   pendingUnoAdvance: 0,

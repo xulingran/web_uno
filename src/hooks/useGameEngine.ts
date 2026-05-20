@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/gameStore'
-import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4 } from '@/utils/ai'
+import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4, shouldBluffWild4 } from '@/utils/ai'
 import { canPlayCard, getActionEffect, getNextPlayerIndex } from '@/utils/rules'
 import { shuffleDeck, drawCards, getCardScore } from '@/utils/deck'
 
@@ -77,7 +77,7 @@ export function useGameEngine() {
           let newCurrentColor = state.currentColor
 
           if (stackCard.type === 'wild' || stackCard.type === 'wild4') {
-            newCurrentColor = chooseColor(newHand)
+            newCurrentColor = chooseColor(newHand, cfg.ai, state.discardPile)
           }
 
           const allUpdates: Record<string, unknown> = {
@@ -128,7 +128,11 @@ export function useGameEngine() {
         return
       }
 
-      const bestCard = findBestCard(aiPlayer.hand, topCard, state.currentColor, cfg)
+      const opponents = state.players
+        .filter((_, i) => i !== state.currentPlayerIndex)
+        .map((p) => ({ handLength: p.hand.length }))
+
+      const bestCard = findBestCard(aiPlayer.hand, topCard, state.currentColor, cfg, opponents)
 
       if (bestCard) {
         const cardIndex = aiPlayer.hand.findIndex((c) => c.id === bestCard.id)
@@ -180,7 +184,7 @@ export function useGameEngine() {
                 players: newPlayers,
                 discardPile: newDiscardPile,
                 cardJustDrawn: null,
-                currentColor: chooseColor(newHand),
+                currentColor: chooseColor(newHand, cfg.ai, newDiscardPile),
                 lastPlayedBy: { playerIndex: state.currentPlayerIndex, cardId: card.id },
                 lastActionEffect: { type: 'wild4', timestamp: Date.now() },
                 challengePlayerIndex: nNextIdx,
@@ -221,7 +225,7 @@ export function useGameEngine() {
                 processingRef.current = false
                 return
               } else {
-                const chosenColor = chooseColor(newHand)
+                const chosenColor = chooseColor(newHand, cfg.ai, newDiscardPile)
                 useGameStore.setState({
                   players: newPlayers,
                   discardPile: newDiscardPile,
@@ -282,7 +286,7 @@ export function useGameEngine() {
         }
 
         if (effect.needsColorPick) {
-          const chosenColor = chooseColor(newHand)
+          const chosenColor = chooseColor(newHand, cfg.ai, newDiscardPile)
           const allUpdates: Record<string, unknown> = {
             players: newPlayers,
             discardPile: newDiscardPile,
@@ -407,7 +411,6 @@ export function useGameEngine() {
         })
 
         if (foundPlayable && cfg.draw.forcePlay && lastPlayableCard) {
-          useGameStore.getState().playCard(lastPlayableCard.id)
           processingRef.current = false
           return
         }
@@ -437,7 +440,6 @@ export function useGameEngine() {
           const topForCheck = cDiscard[cDiscard.length - 1]
           const lastDrawn = drawn[drawn.length - 1]
           if (cfg.draw.forcePlay && canPlayCard(lastDrawn, topForCheck, state.currentColor, newH)) {
-            useGameStore.getState().playCard(lastDrawn.id)
             processingRef.current = false
             return
           }
