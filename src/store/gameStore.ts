@@ -547,14 +547,15 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     }
 
     const cardInfo = formatCardInfo(card)
+    const isDraw2Stack = card.type === 'draw2' && state.pendingDrawCount > 0
     let extra: string | undefined
     if (card.type === 'reverse') extra = '方向反转'
-    if (card.type === 'draw2') extra = `叠加至${state.pendingDrawCount + 2}张`
+    if (isDraw2Stack) extra = `叠加至${state.pendingDrawCount + 2}张`
     get().addLogEntry({ event: 'play', playerName: actualPlayer.name, cardInfo, extra })
     if (card.type === 'reverse') {
       get().addLogEntry({ event: 'reverse', playerName: actualPlayer.name, cardInfo, extra: '方向反转' })
     }
-    if (card.type === 'draw2') {
+    if (isDraw2Stack) {
       get().addLogEntry({ event: 'draw2-stack', playerName: actualPlayer.name, cardInfo, extra: `叠加至${state.pendingDrawCount + 2}张` })
     }
 
@@ -799,6 +800,9 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       )
 
       const afterSkip = getNextPlayerIndex(nextIdx, state.direction, numPlayers, skipCount - 1)
+      if (drawn.length > 0) {
+        get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawn.length}张` })
+      }
 
       set({
         players: newPlayers,
@@ -815,8 +819,9 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     }
 
     const nextIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, skipCount - 1)
-    if (skipCount > 1 && state.players[nextIdx]) {
-      get().addLogEntry({ event: 'skip', playerName: state.players[nextIdx].name })
+    const skippedIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, 0)
+    if (skipCount > 1 && state.players[skippedIdx]) {
+      get().addLogEntry({ event: 'skip', playerName: state.players[skippedIdx].name })
     }
     set({
       currentPlayerIndex: nextIdx,

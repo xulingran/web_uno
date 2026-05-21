@@ -332,6 +332,36 @@ describe('gameStore', () => {
     expect(useGameStore.getState().currentPlayerIndex).toBe(2)
   })
 
+  it('playCard — Skip 日志记录被跳过的玩家而不是跳过后的落点玩家', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'red-skip-0', color: 'red', type: 'skip' },
+            { id: 'blue-3', color: 'blue', type: 'number', value: 3 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [{ id: 'blue-2', color: 'blue', type: 'number', value: 2 }], isHuman: false },
+        { id: 'p2', name: '电脑B', hand: [{ id: 'green-3', color: 'green', type: 'number', value: 3 }], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      discardPile: [{ id: 'red-3', color: 'red', type: 'number', value: 3 }],
+      drawPile: [],
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0, 0],
+      logEntries: [],
+    })
+
+    useGameStore.getState().playCard('red-skip-0')
+
+    const skipLog = useGameStore.getState().logEntries.find((entry) => entry.event === 'skip')
+    expect(skipLog?.playerName).toBe('电脑A')
+  })
+
   it('playCard — 打出 Draw2 后下家摸2张且回合被跳过 (3人局, currentPlayerIndex 0→2)', () => {
     useGameStore.setState({
       phase: 'playing',
@@ -367,6 +397,73 @@ describe('gameStore', () => {
     expect(state.drawAnimating).toBe(true)
     expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 2 })
     expect(state.phase).toBe('playing')
+  })
+
+  it('playCard — 普通 Draw2 不记录为叠加日志', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'red-draw2-0', color: 'red', type: 'draw2' },
+            { id: 'blue-3', color: 'blue', type: 'number', value: 3 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [{ id: 'blue-2', color: 'blue', type: 'number', value: 2 }], isHuman: false },
+        { id: 'p2', name: '电脑B', hand: [{ id: 'green-3', color: 'green', type: 'number', value: 3 }], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      discardPile: [{ id: 'red-3', color: 'red', type: 'number', value: 3 }],
+      drawPile: [
+        { id: 'y1', color: 'yellow', type: 'number', value: 1 },
+        { id: 'y2', color: 'yellow', type: 'number', value: 2 },
+      ],
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0, 0],
+      logEntries: [],
+    })
+
+    useGameStore.getState().playCard('red-draw2-0')
+
+    const logs = useGameStore.getState().logEntries
+    expect(logs.some((entry) => entry.event === 'draw2-stack')).toBe(false)
+    expect(logs.find((entry) => entry.event === 'play')?.extra).toBeUndefined()
+  })
+
+  it('playCard — Draw2 罚抽时记录被罚玩家的摸牌日志', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'red-draw2-0', color: 'red', type: 'draw2' },
+            { id: 'blue-3', color: 'blue', type: 'number', value: 3 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [{ id: 'blue-2', color: 'blue', type: 'number', value: 2 }], isHuman: false },
+        { id: 'p2', name: '电脑B', hand: [{ id: 'green-3', color: 'green', type: 'number', value: 3 }], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      discardPile: [{ id: 'red-3', color: 'red', type: 'number', value: 3 }],
+      drawPile: [
+        { id: 'y1', color: 'yellow', type: 'number', value: 1 },
+        { id: 'y2', color: 'yellow', type: 'number', value: 2 },
+      ],
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0, 0],
+      logEntries: [],
+    })
+
+    useGameStore.getState().playCard('red-draw2-0')
+
+    const drawLog = useGameStore.getState().logEntries.find((entry) => entry.event === 'draw')
+    expect(drawLog).toMatchObject({ playerName: '电脑A', extra: '2张' })
   })
 
   it('playCard — 打出 Wild4 后下家摸4张且回合被跳过 (3人局顺时针, currentPlayerIndex 0→2)', () => {
