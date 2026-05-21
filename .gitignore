@@ -17,9 +17,14 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+.arts
+.codeartsdoer
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Trae generated spec files
+.trae/specs/responsive-layout/
