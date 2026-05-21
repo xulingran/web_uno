@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Player } from '@/utils/types'
 import { useGameStore } from '@/store/gameStore'
 import { getCardScore } from '@/utils/deck'
+import { Bug } from 'lucide-react'
 
 interface ScoreboardProps {
   visible: boolean
@@ -15,6 +16,8 @@ export default function Scoreboard({ visible, players, scores, winner, onNewGame
   const [show, setShow] = useState(false)
   const [animating, setAnimating] = useState(false)
   const config = useGameStore((s) => s.config)
+  const debugMode = useGameStore((s) => s.debugMode)
+  const toggleDebugMode = useGameStore((s) => s.toggleDebugMode)
 
   useEffect(() => {
     if (visible) {
@@ -36,10 +39,17 @@ export default function Scoreboard({ visible, players, scores, winner, onNewGame
       }`}
     >
       <div
-        className={`flex flex-col items-center gap-6 p-5 sm:p-8 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl min-w-[280px] sm:min-w-[340px] transition-all duration-300 ${
+        className={`flex flex-col items-center gap-6 p-5 sm:p-8 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl min-w-[280px] sm:min-w-[340px] transition-all duration-300 relative ${
           animating ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
         }`}
       >
+        <button
+          onClick={toggleDebugMode}
+          className={`absolute top-3 right-3 transition-colors ${debugMode ? 'text-green-400' : 'text-white/30 hover:text-white/60'}`}
+          title="调试模式"
+        >
+          <Bug size={18} />
+        </button>
         <div className="flex flex-col items-center gap-1">
           <div className="text-4xl">🎉</div>
           <h2 className="text-2xl font-game text-yellow-300">

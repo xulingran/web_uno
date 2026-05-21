@@ -20,6 +20,8 @@ const EVENT_LABELS: Record<GameEventType, string> = {
   'wild4-challenge': '+4挑战',
   'uno-call': 'UNO!',
   'round-over': '回合结束',
+  'hand-swap': '交换手牌',
+  'hand-rotate': '轮转手牌',
 }
 
 const EVENT_COLORS: Record<GameEventType, string> = {
@@ -34,6 +36,8 @@ const EVENT_COLORS: Record<GameEventType, string> = {
   'wild4-challenge': 'text-red-400',
   'uno-call': 'text-yellow-400',
   'round-over': 'text-yellow-300',
+  'hand-swap': 'text-pink-400',
+  'hand-rotate': 'text-pink-400',
 }
 
 function formatTime(timestamp: number): string {
@@ -67,7 +71,7 @@ export default function DebugPanel({ visible, logEntries, onClose }: DebugPanelP
 
   return (
     <div
-      className="fixed right-0 top-0 z-40 flex flex-col"
+      className="fixed right-0 top-0 z-[60] flex flex-col"
       style={{ width: '280px', height: '60vh' }}
     >
       <div className="flex items-center justify-between px-3 py-2 bg-black/90 border-b border-white/10">

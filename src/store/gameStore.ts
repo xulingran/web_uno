@@ -31,6 +31,7 @@ interface GameActions {
   addLogEntry: (entry: Omit<GameLogEntry, 'timestamp'>) => void
   clearLogs: () => void
   completeDrawAnimation: () => void
+  cancelColorPick: () => void
 }
 
 interface StoreState {
@@ -51,6 +52,7 @@ interface StoreState {
   stackingWaiting: boolean
   challengePlayerIndex: number | null
   turnStartTime: number | null
+  gameStartTime: number | null
   lastPlayedBy: { playerIndex: number; cardId: string } | null
   lastActionEffect: { type: string; color?: string; timestamp: number } | null
   colorBeforeWild: CardColor | null
@@ -381,6 +383,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   stackingWaiting: false,
   challengePlayerIndex: null,
   turnStartTime: null,
+  gameStartTime: null,
   lastPlayedBy: null,
   lastActionEffect: null,
   colorBeforeWild: null,
@@ -552,6 +555,15 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     if (card.type === 'reverse') extra = '方向反转'
     if (isDraw2Stack) extra = `叠加至${state.pendingDrawCount + 2}张`
     get().addLogEntry({ event: 'play', playerName: actualPlayer.name, cardInfo, extra })
+    if (state.config.actionCards.sevenORule && card.type === 'number') {
+      if (card.value === 7) {
+        const swapTarget = state.players.findIndex((p, i) => i !== playingPlayerIndex && p.hand === newPlayers[playingPlayerIndex].hand)
+        const targetName = swapTarget >= 0 ? state.players[swapTarget]?.name : undefined
+        get().addLogEntry({ event: 'hand-swap', playerName: actualPlayer.name, cardInfo, extra: targetName ? `与${targetName}交换` : undefined })
+      } else if (card.value === 0) {
+        get().addLogEntry({ event: 'hand-rotate', playerName: actualPlayer.name, cardInfo, extra: '所有玩家手牌轮转' })
+      }
+    }
     if (card.type === 'reverse') {
       get().addLogEntry({ event: 'reverse', playerName: actualPlayer.name, cardInfo, extra: '方向反转' })
     }
@@ -848,6 +860,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       stackingWaiting: false,
       challengePlayerIndex: null,
       turnStartTime: null,
+      gameStartTime: null,
       lastPlayedBy: null,
       lastActionEffect: null,
       colorBeforeWild: null,
@@ -1053,6 +1066,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       dealtIndex: 0,
       pendingInitialTopCard: null,
       turnStartTime: state.config.params.turnTimeLimit > 0 ? Date.now() : null,
+      gameStartTime: Date.now(),
     })
   },
 
@@ -1082,5 +1096,34 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     } else if (resolution?.type === 'setPlayer') {
       set({ currentPlayerIndex: resolution.playerIndex })
     }
+  },
+
+  cancelColorPick: () => {
+    const state = get()
+    if (state.phase !== 'color-picking') return
+
+    const player = state.players[state.currentPlayerIndex]
+    if (!player || !player.isHuman) return
+    if (!state.lastPlayedBy || state.lastPlayedBy.playerIndex !== state.currentPlayerIndex) return
+
+    const newDiscardPile = [...state.discardPile]
+    const card = newDiscardPile.pop()
+    if (!card) return
+    if (card.id !== state.lastPlayedBy.cardId) return
+
+    const newHand = [...player.hand, card]
+    const newPlayers = state.players.map((p, i) =>
+      i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+    )
+
+    set({
+      players: newPlayers,
+      discardPile: newDiscardPile,
+      phase: 'playing',
+      lastPlayedBy: null,
+      lastActionEffect: null,
+      colorBeforeWild: null,
+      pendingUnoAdvance: 0,
+    })
   },
 }))

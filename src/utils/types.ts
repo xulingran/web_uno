@@ -34,6 +34,7 @@ export interface DealAnimConfig {
 
 export type GameEventType = 'deal' | 'play' | 'draw' | 'skip' | 'reverse' | 'color-pick'
   | 'draw2-stack' | 'wild4-challenge' | 'uno-call' | 'game-start' | 'round-over'
+  | 'hand-swap' | 'hand-rotate'
 
 export interface GameLogEntry {
   timestamp: number

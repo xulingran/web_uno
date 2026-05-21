@@ -4,6 +4,7 @@ import type { CardColor } from '@/utils/types'
 interface ColorPickerProps {
   visible: boolean
   onPickColor: (color: CardColor) => void
+  onCancel?: () => void
 }
 
 const colors: { color: CardColor; hex: string; name: string; ring: string }[] = [
@@ -13,7 +14,7 @@ const colors: { color: CardColor; hex: string; name: string; ring: string }[] = 
   { color: 'green', hex: '#43A047', name: '绿', ring: 'ring-green-500' },
 ]
 
-export default function ColorPicker({ visible, onPickColor }: ColorPickerProps) {
+export default function ColorPicker({ visible, onPickColor, onCancel }: ColorPickerProps) {
   const [show, setShow] = useState(false)
   const [animating, setAnimating] = useState(false)
 
@@ -58,6 +59,14 @@ export default function ColorPicker({ visible, onPickColor }: ColorPickerProps) 
             </button>
           ))}
         </div>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            className="px-6 py-2 rounded-lg bg-white/10 text-white/60 font-game text-sm hover:bg-white/20 hover:text-white/90 transition-all"
+          >
+            取消
+          </button>
+        )}
       </div>
     </div>
   )

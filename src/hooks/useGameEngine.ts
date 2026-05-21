@@ -358,9 +358,19 @@ export function useGameEngine() {
 
         useGameStore.setState(allUpdates)
 
-        useGameStore.getState().addLogEntry({ event: 'play', playerName: aiPlayer.name, cardInfo: formatCardInfo(card) })
+        const cardInfo = formatCardInfo(card)
+        useGameStore.getState().addLogEntry({ event: 'play', playerName: aiPlayer.name, cardInfo })
+        if (cfg.actionCards.sevenORule && card.type === 'number') {
+          if (card.value === 7) {
+            const swapTarget = state.players.findIndex((p, i) => i !== state.currentPlayerIndex && p.hand === newPlayers[state.currentPlayerIndex].hand)
+            const targetName = swapTarget >= 0 ? state.players[swapTarget]?.name : undefined
+            useGameStore.getState().addLogEntry({ event: 'hand-swap', playerName: aiPlayer.name, cardInfo, extra: targetName ? `与${targetName}交换` : undefined })
+          } else if (card.value === 0) {
+            useGameStore.getState().addLogEntry({ event: 'hand-rotate', playerName: aiPlayer.name, cardInfo, extra: '所有玩家手牌轮转' })
+          }
+        }
         if (card.type === 'reverse') {
-          useGameStore.getState().addLogEntry({ event: 'reverse', playerName: aiPlayer.name, cardInfo: formatCardInfo(card), extra: '方向反转' })
+          useGameStore.getState().addLogEntry({ event: 'reverse', playerName: aiPlayer.name, cardInfo, extra: '方向反转' })
         }
 
         if (effect.reverse && newPlayers.length === 2 && cfg.actionCards.reverseAsSkip) {

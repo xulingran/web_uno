@@ -50,6 +50,7 @@ export default function GameBoard() {
   const config = useGameStore((s) => s.config)
   const unoCalledPlayer = useGameStore((s) => s.unoCalledPlayer)
   const turnStartTime = useGameStore((s) => s.turnStartTime)
+  const gameStartTime = useGameStore((s) => s.gameStartTime)
   const lastPlayedBy = useGameStore((s) => s.lastPlayedBy)
   const lastActionEffect = useGameStore((s) => s.lastActionEffect)
   const debugMode = useGameStore((s) => s.debugMode)
@@ -67,6 +68,7 @@ export default function GameBoard() {
   const resolveUno = useGameStore((s) => s.resolveUno)
   const resolveChallenge = useGameStore((s) => s.resolveChallenge)
   const advanceTurn = useGameStore((s) => s.advanceTurn)
+  const cancelColorPick = useGameStore((s) => s.cancelColorPick)
   const pendingUnoAdvance = useGameStore((s) => s.pendingUnoAdvance)
 
   const [showNewGameModal, setShowNewGameModal] = useState(false)
@@ -167,6 +169,7 @@ export default function GameBoard() {
     if (!config.params.turnTimeLimit || config.params.turnTimeLimit <= 0) return
     if (currentPlayerIndex !== 0) return
     if (phase !== 'playing' || !humanPlayer) return
+    if (drawAnimating) return
 
     const timeoutMs = config.params.turnTimeLimit * 1000
     const start = turnStartTime ?? Date.now()
@@ -178,6 +181,7 @@ export default function GameBoard() {
       const state = useGameStore.getState()
       if (state.pendingUnoAdvance > 0) return
       if (state.currentPlayerIndex !== 0 || state.phase !== 'playing') return
+      if (state.drawAnimating) return
       const hp = state.players[0]
       if (!hp) return
       const tCard = state.discardPile[state.discardPile.length - 1]
@@ -191,7 +195,7 @@ export default function GameBoard() {
     }, remaining)
 
     return () => clearTimeout(timer)
-  }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase, humanPlayer])
+  }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase, humanPlayer, drawAnimating])
 
   // Flying card animation
   useEffect(() => {
@@ -312,6 +316,7 @@ export default function GameBoard() {
           direction={direction}
           currentColor={currentColor}
           currentPlayerName={currentPlayer?.name ?? ''}
+          gameStartTime={gameStartTime}
         />
         <button
           onClick={() => navigate('/settings')}
@@ -448,7 +453,7 @@ export default function GameBoard() {
       )}
 
       {/* Row 4: Skip after draw button (conditional) */}
-      {cardJustDrawn && !config.draw.forcePlay && isHumanTurn && (
+      {cardJustDrawn && !config.draw.forcePlay && isHumanTurn && !drawAnimating && (
         <div className="flex justify-center pb-2" style={{ gridColumn: '1 / -1', gridRow: '4' }}>
           <button
             onClick={() => advanceTurn(1)}
@@ -477,6 +482,7 @@ export default function GameBoard() {
       <ColorPicker
         visible={phase === 'color-picking'}
         onPickColor={pickColor}
+        onCancel={cancelColorPick}
       />
 
       <UNOCall

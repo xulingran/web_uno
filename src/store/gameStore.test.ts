@@ -279,6 +279,37 @@ describe('gameStore', () => {
     expect(useGameStore.getState().phase).toBe('color-picking')
   })
 
+  it('cancelColorPick — 开局翻出 Wild 时取消不会把弃牌堆顶牌加入玩家手牌', () => {
+    useGameStore.setState({
+      phase: 'color-picking',
+      players: [
+        {
+          id: 'p0', name: '你', isHuman: true,
+          hand: [
+            { id: 'red-1', color: 'red', type: 'number', value: 1 },
+            { id: 'blue-2', color: 'blue', type: 'number', value: 2 },
+          ],
+        },
+        { id: 'p1', name: '电脑A', hand: [], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      discardPile: [{ id: 'initial-wild', color: null, type: 'wild' }],
+      pendingInitialTopCard: null,
+      lastPlayedBy: null,
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0],
+    })
+
+    useGameStore.getState().cancelColorPick()
+
+    const state = useGameStore.getState()
+    expect(state.players[0].hand.map((card) => card.id)).toEqual(['red-1', 'blue-2'])
+    expect(state.discardPile.map((card) => card.id)).toEqual(['initial-wild'])
+    expect(state.phase).toBe('color-picking')
+  })
+
   it('playCard — 打出最后一张牌获胜，phase 变为 round-over', () => {
     useGameStore.setState({
       phase: 'playing',

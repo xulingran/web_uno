@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import GameBoard from './GameBoard'
 
 const mockState = {
@@ -84,6 +84,26 @@ vi.mock('@/store/gameStore', () => {
 })
 
 describe('GameBoard', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-05-21T12:00:00Z'))
+    mockState.playCard.mockClear()
+    mockState.drawCard.mockClear()
+    mockState.advanceTurn.mockClear()
+    mockState.drawAnimating = false
+    mockState.phase = 'playing'
+    mockState.currentPlayerIndex = 0
+    mockState.turnStartTime = null
+    mockState.cardJustDrawn = null
+    mockState.debugMode = false
+    mockState.logEntries = []
+    mockState.config.params.turnTimeLimit = 0
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('renders without crashing', () => {
     const { container } = render(<GameBoard />)
     expect(container).toBeTruthy()
@@ -102,5 +122,45 @@ describe('GameBoard', () => {
     expect(screen.getByText('等待中...')).toBeTruthy()
 
     mockState.drawAnimating = false
+  })
+
+  it('does not auto-play or auto-draw when the human turn timer expires during draw animation', () => {
+    mockState.drawAnimating = true
+    mockState.turnStartTime = Date.now()
+    mockState.config.params.turnTimeLimit = 1
+
+    render(<GameBoard />)
+
+    act(() => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    expect(mockState.playCard).not.toHaveBeenCalled()
+    expect(mockState.drawCard).not.toHaveBeenCalled()
+  })
+
+  it('does not show the skip-after-draw button while draw animation is running', () => {
+    mockState.drawAnimating = true
+    mockState.cardJustDrawn = { id: 'yellow-2-0', color: 'yellow', type: 'number', value: 2 }
+
+    render(<GameBoard />)
+
+    expect(screen.queryByText('跳过')).not.toBeInTheDocument()
+  })
+
+  it('keeps the debug panel above the round-over scoreboard overlay', () => {
+    mockState.phase = 'round-over'
+    mockState.debugMode = true
+    mockState.logEntries = [
+      {
+        timestamp: Date.now(),
+        playerName: '你',
+        event: 'round-over',
+      },
+    ]
+
+    render(<GameBoard />)
+
+    expect(screen.getByText('调试日志').parentElement?.parentElement).toHaveClass('z-[60]')
   })
 })

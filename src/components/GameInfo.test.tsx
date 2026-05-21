@@ -9,6 +9,7 @@ describe('GameInfo', () => {
         direction="clockwise"
         currentColor="red"
         currentPlayerName="Alice"
+        gameStartTime={null}
       />
     )
     expect(screen.getByText('顺时针')).toBeInTheDocument()
@@ -20,6 +21,7 @@ describe('GameInfo', () => {
         direction="counterclockwise"
         currentColor="red"
         currentPlayerName="Alice"
+        gameStartTime={null}
       />
     )
     expect(screen.getByText('逆时针')).toBeInTheDocument()
@@ -31,6 +33,7 @@ describe('GameInfo', () => {
         direction="clockwise"
         currentColor="blue"
         currentPlayerName="Alice"
+        gameStartTime={null}
       />
     )
     expect(screen.getByText('当前色: 蓝')).toBeInTheDocument()
@@ -42,6 +45,7 @@ describe('GameInfo', () => {
         direction="clockwise"
         currentColor="green"
         currentPlayerName="Bob"
+        gameStartTime={null}
       />
     )
     expect(screen.getByText('Bob')).toBeInTheDocument()
@@ -53,10 +57,35 @@ describe('GameInfo', () => {
         direction="counterclockwise"
         currentColor="yellow"
         currentPlayerName="Charlie"
+        gameStartTime={null}
       />
     )
     expect(screen.getByText('逆时针')).toBeInTheDocument()
     expect(screen.getByText('当前色: 黄')).toBeInTheDocument()
     expect(screen.getByText('Charlie')).toBeInTheDocument()
+  })
+
+  it('displays timer when gameStartTime is set', () => {
+    render(
+      <GameInfo
+        direction="clockwise"
+        currentColor="red"
+        currentPlayerName="Alice"
+        gameStartTime={Date.now()}
+      />
+    )
+    expect(screen.getByText('00:00')).toBeInTheDocument()
+  })
+
+  it('does not display timer when gameStartTime is null', () => {
+    render(
+      <GameInfo
+        direction="clockwise"
+        currentColor="red"
+        currentPlayerName="Alice"
+        gameStartTime={null}
+      />
+    )
+    expect(screen.queryByText('00:00')).not.toBeInTheDocument()
   })
 })
