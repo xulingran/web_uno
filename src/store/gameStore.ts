@@ -3,7 +3,7 @@ import type { Card, CardColor, Direction, GamePhase, Player } from '@/utils/type
 import type { GameConfig } from '@/config/types'
 import { useConfigStore } from './configStore'
 import { createDeck, shuffleDeck, dealCards, drawCards, getCardScore, ensureNotEmpty } from '@/utils/deck'
-import { canPlayCard, canStack, canJumpIn, getNextPlayerIndex, getActionEffect, getCardActionEffectType } from '@/utils/rules'
+import { canPlayCard, canStack, canJumpIn, getNextPlayerIndex, getActionEffect, getCardActionEffectType, type ActionEffect } from '@/utils/rules'
 import { shouldChallengeWild4 } from '@/utils/ai'
 
 interface GameActions {
@@ -39,6 +39,7 @@ interface StoreState {
   lastPlayedBy: { playerIndex: number; cardId: string } | null
   lastActionEffect: { type: string; color?: string; timestamp: number } | null
   colorBeforeWild: CardColor | null
+  lastDrawEvent: { playerIndex: number; cardCount: number; timestamp: number } | null
 }
 
 function getFirstValidTopCard(
@@ -103,6 +104,223 @@ function applyDrawToPlayer(
   return { drawn: allDrawn, drawPile: curDrawPile, discardPile: curDiscardPile }
 }
 
+function validateJumpIn(
+  state: StoreState,
+  cardId: string,
+  currentPlayerIndex: number
+): { isJumpIn: boolean; playingPlayerIndex: number } {
+  const humanPlayer = state.players[0]
+  if (!humanPlayer || !humanPlayer.isHuman) {
+    return { isJumpIn: false, playingPlayerIndex: currentPlayerIndex }
+  }
+
+  const topCard = state.discardPile[state.discardPile.length - 1]
+  const cardIdx = humanPlayer.hand.findIndex((c) => c.id === cardId)
+  if (cardIdx === -1) {
+    return { isJumpIn: false, playingPlayerIndex: currentPlayerIndex }
+  }
+
+  const jumpCard = humanPlayer.hand[cardIdx]
+  if (canJumpIn(jumpCard, topCard, state.currentColor)) {
+    return { isJumpIn: true, playingPlayerIndex: 0 }
+  }
+
+  return { isJumpIn: false, playingPlayerIndex: currentPlayerIndex }
+}
+
+function validateCardPlay(
+  card: Card,
+  topCard: Card,
+  state: StoreState,
+  playerHand: Card[],
+  isJumpIn: boolean
+): boolean {
+  if (state.pendingDrawCount > 0) {
+    const stackingEnabled = state.config.actionCards.stackingDraw2 || state.config.actionCards.stackingDraw4
+    if (!stackingEnabled || !canStack(card, topCard, state.config.actionCards)) {
+      return false
+    }
+    if (card.type === 'wild4') {
+      const hasMatchingColor = playerHand.some((c) => c.color === state.currentColor)
+      return !hasMatchingColor
+    }
+    return true
+  }
+
+  if (isJumpIn) {
+    return true
+  }
+
+  return canPlayCard(card, topCard, state.currentColor, playerHand)
+}
+
+function applySevenORule(
+  players: Player[],
+  card: Card,
+  playingPlayerIndex: number,
+  direction: Direction
+): Player[] {
+  if (card.type !== 'number') return players
+
+  const newPlayers = [...players]
+
+  if (card.value === 7) {
+    let maxCards = 0
+    let swapTarget = -1
+    for (let i = 0; i < newPlayers.length; i++) {
+      if (i !== playingPlayerIndex && newPlayers[i].hand.length > maxCards) {
+        maxCards = newPlayers[i].hand.length
+        swapTarget = i
+      }
+    }
+    if (swapTarget >= 0) {
+      const temp = newPlayers[playingPlayerIndex].hand
+      newPlayers[playingPlayerIndex] = { ...newPlayers[playingPlayerIndex], hand: newPlayers[swapTarget].hand }
+      newPlayers[swapTarget] = { ...newPlayers[swapTarget], hand: temp }
+    }
+  } else if (card.value === 0) {
+    const hands = newPlayers.map((p) => [...p.hand])
+    const dir = direction === 'clockwise' ? 1 : newPlayers.length - 1
+    for (let i = 0; i < newPlayers.length; i++) {
+      newPlayers[i] = { ...newPlayers[i], hand: hands[(i - dir + newPlayers.length) % newPlayers.length] }
+    }
+  }
+
+  return newPlayers
+}
+
+function handleUnoLogic(
+  player: Player,
+  handSize: number,
+  config: GameConfig,
+  baseUpdate: Partial<StoreState>
+): { needsUnoConfirm: boolean } {
+  if (handSize === 1 && config.uno.requireUNOCall) {
+    if (player.isHuman && !config.uno.autoDetectUNO) {
+      baseUpdate.unoCalledPlayer = null
+      return { needsUnoConfirm: true }
+    } else {
+      baseUpdate.unoCalledPlayer = player.id
+      return { needsUnoConfirm: false }
+    }
+  }
+  return { needsUnoConfirm: false }
+}
+
+function checkVictory(
+  players: Player[],
+  playingPlayerIndex: number,
+  baseUpdate: Partial<StoreState>,
+  config: GameConfig,
+  currentScores: number[]
+): { hasWinner: boolean; victoryUpdate?: Partial<StoreState> } {
+  if (players[playingPlayerIndex].hand.length !== 0) {
+    return { hasWinner: false }
+  }
+
+  const newScores = [...currentScores]
+  const winnerIdx = playingPlayerIndex
+  let totalPoints = 0
+  for (let i = 0; i < players.length; i++) {
+    if (i !== winnerIdx) {
+      const points = players[i].hand.reduce((sum, c) => sum + getCardScore(c, config), 0)
+      totalPoints += points
+    }
+  }
+  newScores[winnerIdx] += totalPoints
+
+  return {
+    hasWinner: true,
+    victoryUpdate: {
+      ...baseUpdate,
+      winner: { ...players[playingPlayerIndex] },
+      phase: 'round-over' as const,
+      scores: newScores,
+    },
+  }
+}
+
+function handleTurnAdvance(
+  needsUnoConfirm: boolean,
+  skipCount: number,
+  advanceTurnFn: (skipCount?: number) => void,
+  setFn: (partial: Partial<StoreState>) => void
+): void {
+  if (needsUnoConfirm) {
+    setFn({ pendingUnoAdvance: skipCount })
+    return
+  }
+  advanceTurnFn(skipCount)
+}
+
+function applyCardEffectAndAdvanceTurn(
+  card: Card,
+  effect: ActionEffect,
+  state: StoreState,
+  baseUpdate: Partial<StoreState>,
+  playingPlayerIndex: number,
+  isJumpIn: boolean,
+  needsUnoConfirm: boolean,
+  advanceTurnFn: (skipCount?: number) => void,
+  setFn: (partial: Partial<StoreState>) => void
+): void {
+  const actionEffectType = getCardActionEffectType(card)
+  if (actionEffectType) {
+    baseUpdate.lastActionEffect = { ...actionEffectType, timestamp: Date.now() }
+  }
+  baseUpdate.lastPlayedBy = { playerIndex: playingPlayerIndex, cardId: card.id }
+
+  if (effect.needsColorPick) {
+    setFn({
+      ...baseUpdate,
+      phase: 'color-picking' as const,
+      currentPlayerIndex: playingPlayerIndex,
+      colorBeforeWild: state.currentColor,
+      ...(needsUnoConfirm ? { pendingUnoAdvance: 1 } : {}),
+    })
+    return
+  }
+
+  if (card.color != null) {
+    baseUpdate.currentColor = card.color
+  }
+
+  if (isJumpIn) {
+    baseUpdate.currentPlayerIndex = playingPlayerIndex
+  }
+
+  if (effect.reverse) {
+    const newDirection: Direction =
+      state.direction === 'clockwise' ? 'counterclockwise' : 'clockwise'
+    baseUpdate.direction = newDirection
+  }
+
+  setFn(baseUpdate)
+
+  if (effect.reverse && state.players.length === 2 && state.config.actionCards.reverseAsSkip) {
+    handleTurnAdvance(needsUnoConfirm, 2, advanceTurnFn, setFn)
+    return
+  }
+
+  if (effect.drawCount > 0) {
+    setFn({ pendingDrawCount: state.pendingDrawCount + effect.drawCount })
+    handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
+    return
+  }
+
+  if (effect.skipNext) {
+    handleTurnAdvance(needsUnoConfirm, 2, advanceTurnFn, setFn)
+    return
+  }
+
+  if (effect.reverse) {
+    handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
+    return
+  }
+
+  handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
+}
+
 export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   players: [],
   drawPile: [],
@@ -134,6 +352,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   lastPlayedBy: null,
   lastActionEffect: null,
   colorBeforeWild: null,
+  lastDrawEvent: null,
 
   initGame: () => {
     const config = useConfigStore.getState().config
@@ -161,12 +380,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       initialPlayerIndex = 0
     } else if (topCard.type === 'reverse') {
       initialDirection = 'counterclockwise'
-      if (totalPlayers === 2 && config.actionCards.reverseAsSkip) {
-        initialSkipCount = 1
-        initialPlayerIndex = 0
-      } else {
-        initialPlayerIndex = 0
-      }
+      initialPlayerIndex = totalPlayers - 1
     }
 
     let currentDrawPile = drawPile
@@ -205,6 +419,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       lastPlayedBy: null,
       lastActionEffect: null,
       colorBeforeWild: null,
+      lastDrawEvent: null,
     })
 
     if (initialSkipCount > 0) {
@@ -222,33 +437,15 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
 
     if (!player.isHuman) {
       if (state.config.actionCards.jumpIn) {
-        const humanPlayer = state.players[0]
-        if (humanPlayer && humanPlayer.isHuman) {
-          const topCard = state.discardPile[state.discardPile.length - 1]
-          const cardIdx = humanPlayer.hand.findIndex((c) => c.id === cardId)
-          if (cardIdx !== -1) {
-            const jumpCard = humanPlayer.hand[cardIdx]
-            if (canJumpIn(jumpCard, topCard, state.currentColor)) {
-              isJumpIn = true
-              playingPlayerIndex = 0
-            }
-          }
-        }
+        const jumpInResult = validateJumpIn(state, cardId, state.currentPlayerIndex)
+        isJumpIn = jumpInResult.isJumpIn
+        playingPlayerIndex = jumpInResult.playingPlayerIndex
       }
       if (!isJumpIn) return
     } else if (state.config.actionCards.jumpIn && player.isHuman && state.currentPlayerIndex !== 0) {
-      const topCard = state.discardPile[state.discardPile.length - 1]
-      const humanPlayer = state.players[0]
-      if (humanPlayer && humanPlayer.isHuman) {
-        const cardIdx = humanPlayer.hand.findIndex((c) => c.id === cardId)
-        if (cardIdx !== -1) {
-          const jumpCard = humanPlayer.hand[cardIdx]
-          if (canJumpIn(jumpCard, topCard, state.currentColor)) {
-            isJumpIn = true
-            playingPlayerIndex = 0
-          }
-        }
-      }
+      const jumpInResult = validateJumpIn(state, cardId, state.currentPlayerIndex)
+      isJumpIn = jumpInResult.isJumpIn
+      playingPlayerIndex = jumpInResult.playingPlayerIndex
     }
 
     const actualPlayer = state.players[playingPlayerIndex]
@@ -260,12 +457,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     const card = actualPlayer.hand[cardIndex]
     const topCard = state.discardPile[state.discardPile.length - 1]
 
-    if (state.pendingDrawCount > 0) {
-      const stackingEnabled = state.config.actionCards.stackingDraw2 || state.config.actionCards.stackingDraw4
-      if (!(stackingEnabled && canStack(card, topCard, state.config.actionCards))) {
-        return
-      }
-    } else if (!isJumpIn && !canPlayCard(card, topCard, state.currentColor, actualPlayer.hand)) {
+    if (!validateCardPlay(card, topCard, state, actualPlayer.hand, isJumpIn)) {
       return
     }
 
@@ -273,32 +465,12 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     newHand.splice(cardIndex, 1)
     const newDiscardPile = [...state.discardPile, card]
 
-    const newPlayers = state.players.map((p, i) =>
+    let newPlayers = state.players.map((p, i) =>
       i === playingPlayerIndex ? { ...p, hand: newHand } : p
     )
 
-    if (state.config.actionCards.sevenORule && card.type === 'number') {
-      if (card.value === 7) {
-        let maxCards = 0
-        let swapTarget = -1
-        for (let i = 0; i < newPlayers.length; i++) {
-          if (i !== playingPlayerIndex && newPlayers[i].hand.length > maxCards) {
-            maxCards = newPlayers[i].hand.length
-            swapTarget = i
-          }
-        }
-        if (swapTarget >= 0) {
-          const temp = newPlayers[playingPlayerIndex].hand
-          newPlayers[playingPlayerIndex] = { ...newPlayers[playingPlayerIndex], hand: newPlayers[swapTarget].hand }
-          newPlayers[swapTarget] = { ...newPlayers[swapTarget], hand: temp }
-        }
-      } else if (card.value === 0) {
-        const hands = newPlayers.map((p) => [...p.hand])
-        const dir = state.direction === 'clockwise' ? 1 : newPlayers.length - 1
-        for (let i = 0; i < newPlayers.length; i++) {
-          newPlayers[i] = { ...newPlayers[i], hand: hands[(i - dir + newPlayers.length) % newPlayers.length] }
-        }
-      }
+    if (state.config.actionCards.sevenORule) {
+      newPlayers = applySevenORule(newPlayers, card, playingPlayerIndex, state.direction)
     }
 
     const baseUpdate: Partial<StoreState> = {
@@ -307,117 +479,27 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       cardJustDrawn: null,
     }
 
-    if (newHand.length === 1) {
-      if (state.config.uno.requireUNOCall) {
-        if (actualPlayer.isHuman && !state.config.uno.autoDetectUNO) {
-          baseUpdate.unoCalledPlayer = null
-        } else {
-          baseUpdate.unoCalledPlayer = actualPlayer.id
-        }
-      }
-    }
+    const unoResult = handleUnoLogic(actualPlayer, newHand.length, state.config, baseUpdate)
+    const needsUnoConfirm = unoResult.needsUnoConfirm
 
-    if (newPlayers[playingPlayerIndex].hand.length === 0) {
-      const newScores = [...state.scores]
-      const winnerIdx = playingPlayerIndex
-      let totalPoints = 0
-      for (let i = 0; i < newPlayers.length; i++) {
-        if (i !== winnerIdx) {
-          const points = newPlayers[i].hand.reduce((sum, c) => sum + getCardScore(c, state.config), 0)
-          totalPoints += points
-        }
-      }
-      newScores[winnerIdx] += totalPoints
-
-      set({
-        ...baseUpdate,
-        winner: { ...newPlayers[playingPlayerIndex], hand: newHand },
-        phase: 'round-over',
-        scores: newScores,
-      })
+    const victoryResult = checkVictory(newPlayers, playingPlayerIndex, baseUpdate, state.config, state.scores)
+    if (victoryResult.hasWinner) {
+      set(victoryResult.victoryUpdate!)
       return
     }
 
     const effect = getActionEffect(card, newPlayers.length, state.config.actionCards.reverseAsSkip)
-
-    const actionEffectType = getCardActionEffectType(card)
-    if (actionEffectType) {
-      baseUpdate.lastActionEffect = { ...actionEffectType, timestamp: Date.now() }
-    }
-    baseUpdate.lastPlayedBy = { playerIndex: playingPlayerIndex, cardId: card.id }
-
-    const needsUnoConfirm = newHand.length === 1 && actualPlayer.isHuman && state.config.uno.requireUNOCall && !state.config.uno.autoDetectUNO
-
-    if (effect.needsColorPick) {
-      set({
-        ...baseUpdate,
-        phase: 'color-picking',
-        currentPlayerIndex: playingPlayerIndex,
-        colorBeforeWild: state.currentColor,
-        ...(needsUnoConfirm ? { pendingUnoAdvance: 1 } : {}),
-      })
-      return
-    }
-
-    if (card.color != null) {
-      baseUpdate.currentColor = card.color
-    }
-
-    if (isJumpIn) {
-      baseUpdate.currentPlayerIndex = playingPlayerIndex
-    }
-
-    if (effect.reverse) {
-      const newDirection: Direction =
-        state.direction === 'clockwise' ? 'counterclockwise' : 'clockwise'
-      baseUpdate.direction = newDirection
-    }
-
-    set(baseUpdate)
-
-    if (effect.reverse && state.players.length === 2 && state.config.actionCards.reverseAsSkip) {
-      if (needsUnoConfirm) {
-        set({ pendingUnoAdvance: 2 })
-        return
-      }
-      get().advanceTurn(2)
-      return
-    }
-
-    if (effect.drawCount > 0) {
-      set({ pendingDrawCount: get().pendingDrawCount + effect.drawCount })
-      if (needsUnoConfirm) {
-        set({ pendingUnoAdvance: 1 })
-        return
-      }
-      get().advanceTurn(1)
-      return
-    }
-
-    if (effect.skipNext) {
-      if (needsUnoConfirm) {
-        set({ pendingUnoAdvance: 2 })
-        return
-      }
-      get().advanceTurn(2)
-      return
-    }
-
-    if (effect.reverse) {
-      if (needsUnoConfirm) {
-        set({ pendingUnoAdvance: 1 })
-        return
-      }
-      get().advanceTurn(1)
-      return
-    }
-
-    if (needsUnoConfirm) {
-      set({ pendingUnoAdvance: 1 })
-      return
-    }
-
-    get().advanceTurn(1)
+    applyCardEffectAndAdvanceTurn(
+      card,
+      effect,
+      state,
+      baseUpdate,
+      playingPlayerIndex,
+      isJumpIn,
+      needsUnoConfirm,
+      get().advanceTurn,
+      set
+    )
   },
 
   drawCard: () => {
@@ -474,6 +556,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         drawPile: currentDrawPile,
         discardPile: currentDiscardPile,
         cardJustDrawn: drawnCard,
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: newHand.length - player.hand.length, timestamp: Date.now() },
       })
 
       if (foundPlayable && drawnCard && canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
@@ -499,6 +582,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         drawPile: currentDrawPile,
         discardPile: currentDiscardPile,
         cardJustDrawn: lastDrawn,
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
       })
 
       if (canPlayCard(lastDrawn, topCard, state.currentColor, newHand)) {
@@ -573,6 +657,8 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       set({ phase: 'uno-call' })
       return
     }
+
+    if (!state.lastPlayedBy) return
 
     get().advanceTurn(1)
   },
@@ -688,6 +774,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         drawPile: newDrawPile,
         discardPile: newDiscardPile,
         pendingDrawCount: 0,
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
       })
     } else {
       set({ pendingDrawCount: 0 })

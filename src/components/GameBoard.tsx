@@ -48,6 +48,7 @@ export default function GameBoard() {
   const turnStartTime = useGameStore((s) => s.turnStartTime)
   const lastPlayedBy = useGameStore((s) => s.lastPlayedBy)
   const lastActionEffect = useGameStore((s) => s.lastActionEffect)
+  const lastDrawEvent = useGameStore((s) => s.lastDrawEvent)
 
   const playCard = useGameStore((s) => s.playCard)
   const drawCard = useGameStore((s) => s.drawCard)
@@ -67,6 +68,8 @@ export default function GameBoard() {
 
   const aiRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const discardPileRef = useRef<HTMLDivElement>(null)
+  const drawPileRef = useRef<HTMLDivElement>(null)
+  const playerHandRef = useRef<HTMLDivElement>(null)
 
   const humanPlayer = players[0]
   const aiCount = players.length - 1
@@ -99,11 +102,12 @@ export default function GameBoard() {
     const stackable = new Set<string>()
     for (const card of humanPlayer.hand) {
       if (canStack(card, topCard, config.actionCards)) {
+        if (card.type === 'wild4' && humanPlayer.hand.some((c) => c.color === currentColor)) continue
         stackable.add(card.id)
       }
     }
     return stackable
-  }, [humanPlayer, topCard, pendingDrawCount, config])
+  }, [humanPlayer, topCard, pendingDrawCount, config, currentColor])
 
   const jumpInCards = useMemo(() => {
     if (!humanPlayer || !topCard || !config.actionCards.jumpIn) return new Set<string>()
@@ -222,6 +226,76 @@ export default function GameBoard() {
       return () => clearTimeout(t)
     }
   }, [discardBounce])
+
+  // Draw card animation
+  useEffect(() => {
+    if (!lastDrawEvent) return
+
+    const sourceEl = drawPileRef.current
+    if (!sourceEl) return
+
+    let targetEl: HTMLElement | null = null
+
+    if (lastDrawEvent.playerIndex === 0) {
+      targetEl = playerHandRef.current
+    } else {
+      targetEl = aiRefs.current.get(lastDrawEvent.playerIndex) ?? null
+    }
+
+    if (!targetEl) return
+
+    const sourceRect = sourceEl.getBoundingClientRect()
+    const targetRect = targetEl.getBoundingClientRect()
+    const cardCount = lastDrawEvent.cardCount
+
+    const timers: ReturnType<typeof setTimeout>[] = []
+
+    for (let i = 0; i < cardCount; i++) {
+      const delay = i * 100
+
+      const timer = setTimeout(() => {
+        const flyEl = document.createElement('div')
+        const startX = sourceRect.left + sourceRect.width / 2 - 45
+        const startY = sourceRect.top + sourceRect.height / 2 - 67
+        const endX = targetRect.left + targetRect.width / 2 - 45 + (Math.random() - 0.5) * 20
+        const endY = targetRect.top + targetRect.height / 2 - 67 + (Math.random() - 0.5) * 16
+
+        flyEl.style.position = 'fixed'
+        flyEl.style.left = `${startX}px`
+        flyEl.style.top = `${startY}px`
+        flyEl.style.width = '90px'
+        flyEl.style.height = '135px'
+        flyEl.style.borderRadius = '10px'
+        flyEl.style.background = 'linear-gradient(135deg, #c62828 0%, #d32f2f 50%, #b71c1c 100%)'
+        flyEl.style.border = '3px solid #ffcc00'
+        flyEl.style.zIndex = '9999'
+        flyEl.style.pointerEvents = 'none'
+        flyEl.style.transition = 'all 500ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+        flyEl.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)'
+        flyEl.style.opacity = '0.8'
+        flyEl.style.transform = `rotate(${(Math.random() - 0.5) * 10}deg) scale(0.6)`
+        document.body.appendChild(flyEl)
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            flyEl.style.left = `${endX}px`
+            flyEl.style.top = `${endY}px`
+            flyEl.style.opacity = '1'
+            flyEl.style.transform = 'rotate(0deg) scale(0.85)'
+          })
+        })
+
+        const removeTimer = setTimeout(() => flyEl.remove(), 550)
+        timers.push(removeTimer)
+      }, delay)
+
+      timers.push(timer)
+    }
+
+    return () => {
+      for (const t of timers) clearTimeout(t)
+    }
+  }, [lastDrawEvent])
 
   // Action effect overlay
   useEffect(() => {
@@ -355,6 +429,7 @@ export default function GameBoard() {
         <div className="flex-1 flex items-center justify-center relative">
           <div className="flex items-center gap-12">
             <DrawPile
+              ref={drawPileRef}
               count={drawPile.length}
               onDraw={drawCard}
               canDraw={canDraw && pendingDrawCount <= 0}
@@ -438,6 +513,7 @@ export default function GameBoard() {
       <div className="flex justify-center pb-6 px-4">
         {humanPlayer && (
           <PlayerHand
+            ref={playerHandRef}
             cards={humanPlayer.hand}
             onPlayCard={(id) => playCard(id)}
             playableCards={playableCards}

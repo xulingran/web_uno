@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import CardBack from './CardBack'
 
 interface DrawPileProps {
@@ -6,9 +7,9 @@ interface DrawPileProps {
   canDraw: boolean
 }
 
-export default function DrawPile({ count, onDraw, canDraw }: DrawPileProps) {
+const DrawPile = forwardRef<HTMLDivElement, DrawPileProps>(function DrawPile({ count, onDraw, canDraw }, ref) {
   return (
-    <div className="flex flex-col items-center gap-2">
+    <div ref={ref} className="flex flex-col items-center gap-2">
       <div
         className={`relative transition-all duration-200 ${canDraw ? 'cursor-pointer hover:scale-105' : ''}`}
         onClick={canDraw ? onDraw : undefined}
@@ -34,4 +35,6 @@ export default function DrawPile({ count, onDraw, canDraw }: DrawPileProps) {
       </div>
     </div>
   )
-}
+})
+
+export default DrawPile

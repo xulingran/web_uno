@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { canPlayCard, getNextPlayerIndex, getActionEffect, canStack, canJumpIn } from './rules'
-import type { Card, CardColor, Direction } from './types'
+import type { Card } from './types'
 
 function card(overrides: Partial<Card>): Card {
   return { id: 'test', color: 'red', type: 'number', value: 5, ...overrides }

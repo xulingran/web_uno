@@ -47,7 +47,11 @@ export function useGameEngine() {
       const cfg = state.config
 
       if (state.pendingDrawCount > 0) {
-        const stackCard = shouldStackDraw(aiPlayer.hand, topCard, cfg)
+        let stackCard = shouldStackDraw(aiPlayer.hand, topCard, cfg)
+        if (stackCard && stackCard.type === 'wild4') {
+          const hasMatchingColor = aiPlayer.hand.some((c) => c.color === state.currentColor)
+          if (hasMatchingColor) stackCard = null
+        }
         if (stackCard) {
           const cardIndex = aiPlayer.hand.findIndex((c) => c.id === stackCard.id)
           const newHand = [...aiPlayer.hand]

@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import type { Card as CardType } from '@/utils/types'
 import Card from './Card'
 
@@ -10,7 +11,7 @@ interface PlayerHandProps {
   isCurrentTurn: boolean
 }
 
-export default function PlayerHand({ cards, onPlayCard, playableCards, stackableCards, jumpInCards, isCurrentTurn }: PlayerHandProps) {
+const PlayerHand = forwardRef<HTMLDivElement, PlayerHandProps>(function PlayerHand({ cards, onPlayCard, playableCards, stackableCards, jumpInCards, isCurrentTurn }, ref) {
   return (
     <div className="flex flex-col items-center gap-2 w-full">
       {isCurrentTurn && (
@@ -18,7 +19,7 @@ export default function PlayerHand({ cards, onPlayCard, playableCards, stackable
           轮到你了！
         </div>
       )}
-      <div className="w-full max-w-full overflow-x-auto flex items-end justify-center gap-1 px-4 py-1">
+      <div ref={ref} className="w-full max-w-full overflow-x-auto flex items-end justify-center gap-1 px-4 py-1">
         {cards.map((card, index) => {
           const isPlayable = playableCards.has(card.id)
           const isStackable = stackableCards?.has(card.id) ?? false
@@ -51,4 +52,6 @@ export default function PlayerHand({ cards, onPlayCard, playableCards, stackable
       </div>
     </div>
   )
-}
+})
+
+export default PlayerHand
