@@ -1,0 +1,86 @@
+<h2>当前布局问题分析</h2>
+<p class="subtitle">基于代码审查和实际截图发现的问题</p>
+
+<div class="section">
+  <h3>A. 游戏主界面 (GameBoard)</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>1. 固定尺寸问题</h3>
+        <p>卡牌尺寸硬编码为 90×135px，不随屏幕缩放。在小屏幕上会显得拥挤，在大屏幕上显得太小。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>2. AI 手牌区域空间浪费</h3>
+        <p>左右 AI 容器固定 w-28 (112px)，扇形展开的卡牌可能溢出。顶部 AI 行间距固定 gap-6，多 AI 时可能过于拥挤。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>3. 中央区域过大</h3>
+        <p>抽牌堆和弃牌堆之间 gap-12 是固定的，中间区域 flex-1 占据了大量空间，视觉上显得空旷。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>4. 玩家手牌区域</h3>
+        <p>手牌使用 overflow-x-auto 但没有最大宽度限制，卡牌数量多时需要水平滚动，体验不佳。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>5. GameInfo 信息栏</h3>
+        <p>信息栏内容为横排排列（方向、颜色、回合），在小屏上可能溢出或被压缩。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>B. 设置页面 (SettingsPage)</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>6. 面板宽度限制</h3>
+        <p>设置面板 max-w-lg (512px) 在宽屏上显得过于狭窄，大量空白浪费。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>7. 控件间距不均</h3>
+        <p>开关和数字调节器的垂直间距 py-2 较紧，分组内项目之间缺乏呼吸空间。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>8. 折叠面板视觉层级弱</h3>
+        <p>分组边框 border-white/10 和背景 bg-white/5 对比度低，不易区分不同设置组。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>C. 弹窗/模态框</h3>
+  <div class="cards">
+    <div class="card">
+      <div class="card-body">
+        <h3>9. 新游戏弹窗排版</h3>
+        <p>紧凑模式下预设按钮、难度选择和规则标签堆叠在一起，间距过小，视觉杂乱。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>10. 颜色选择器</h3>
+        <p>四个颜色按钮尺寸固定 72×72px，间距 gap-5，在小屏上可能溢出。</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h3>11. 记分板</h3>
+        <p>min-w-[340px] 在小屏上可能不适配，整体宽度固定缺少响应式调整。</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,141 @@
+<h2>设计方案 Part 2：GameBoard 布局重构</h2>
+<p class="subtitle">CSS Grid 布局 + AI 手牌区域优化 + 玩家手牌叠放策略</p>
+
+<div class="section">
+  <h3>2.1 GameBoard 改为 CSS Grid 布局</h3>
+  <div class="mockup">
+    <div class="mockup-header">当前：嵌套 Flexbox → 改为：语义化 Grid</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:16px;">
+        <div style="flex:1;padding:12px;border-radius:8px;background:#1a1a1a;border:1px solid #e5393540;">
+          <strong style="color:#e53935;">当前 Flex 布局</strong>
+          <pre style="font-size:11px;color:#aaa;margin-top:8px;white-space:pre-wrap;">div.flex-col (全页)
+  div.flex (GameInfo 顶栏)
+  div.flex.justify-center (顶部AI)
+  div.flex-1.flex (中行)
+    div.w-28 (左AI) — 固定宽度
+    div.flex-1 (中央牌堆)
+    div.w-28 (右AI) — 固定宽度
+  div.flex.justify-center (玩家手牌)</pre>
+          <span style="color:#ff8a80;font-size:12px;">问题：固定宽度、flex-1 空间浪费、嵌套层级深</span>
+        </div>
+        <div style="flex:1;padding:12px;border-radius:8px;background:#1a1a2a;border:1px solid #43A04740;">
+          <strong style="color:#43A047;">改造后 Grid 布局</strong>
+          <pre style="font-size:11px;color:#aaa;margin-top:8px;white-space:pre-wrap;">div.grid (全页, 3列 × 4行)
+  grid-template-columns:
+    auto 1fr auto
+  grid-template-rows:
+    auto auto 1fr auto
+
+区域分配:
+  [info]   跨3列  → GameInfo
+  [top-ai] 跨3列  → 顶部AI行
+  [left] [center] [right]
+          左AI   牌堆区  右AI
+  [hand]  跨3列  → 玩家手牌</pre>
+          <span style="color:#a5d6a7;font-size:12px;">优势：比例自适应、语义清晰、AI区域 auto 按内容撑开</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>具体做法</h3>
+  <ul>
+    <li><code>GameBoard</code> 根元素从 <code>flex flex-col</code> 改为 <code>grid</code>，定义 3 列 4 行</li>
+    <li>左/右 AI 列用 <code>auto</code> 宽度（按内容撑开），不再硬编码 w-28</li>
+    <li>中央列用 <code>1fr</code>，自动占据剩余空间</li>
+    <li>GameInfo 行和玩家手牌行用 <code>grid-column: 1 / -1</code> 跨满</li>
+    <li>顶部 AI 行同样跨满，内部用 flex 居中排列</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>2.2 AI 手牌区域优化</h3>
+  <div class="mockup">
+    <div class="mockup-header">AI 手牌：动态尺寸 + 合理间距</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:200px;padding:12px;border-radius:8px;background:#1a2a1a;border:1px solid #43A04740;">
+          <strong style="color:#FDD835;">顶部 AI</strong>
+          <ul style="font-size:13px;color:#ccc;margin-top:4px;">
+            <li>多个 AI 时 gap 从固定 gap-6 改为响应式 gap</li>
+            <li>AI 卡牌背面的 top 尺寸跟随 CSS 变量</li>
+            <li>容器加 <code>overflow-x-auto</code> 防止溢出</li>
+          </ul>
+        </div>
+        <div style="flex:1;min-width:200px;padding:12px;border-radius:8px;background:#2a1a1a;border:1px solid #E5393540;">
+          <strong style="color:#FDD835;">左右 AI</strong>
+          <ul style="font-size:13px;color:#ccc;margin-top:4px;">
+            <li>旋转后的内容通过 <code>padding</code> 确保不溢出 Grid cell</li>
+            <li>side 尺寸卡牌背面跟随 CSS 变量</li>
+            <li>无左右 AI 时 Grid 列折叠为 0</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>2.3 玩家手牌叠放策略</h3>
+  <div class="mockup">
+    <div class="mockup-header">多牌时自动叠放，减少水平空间占用</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:16px;align-items:end;">
+        <div style="text-align:center;">
+          <div style="position:relative;width:120px;height:90px;">
+            <div style="position:absolute;left:0;width:40px;height:60px;background:#E53935;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:12px;width:40px;height:60px;background:#1E88E5;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:24px;width:40px;height:60px;background:#43A047;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:36px;width:40px;height:60px;background:#FDD835;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:48px;width:40px;height:60px;background:#E53935;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:60px;width:40px;height:60px;background:#1E88E5;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:72px;width:40px;height:60px;background:#43A047;border-radius:4px;border:1px solid #ffcc00;"></div>
+          </div>
+          <div style="font-size:11px;color:#888;margin-top:4px;">当前：gap-1 固定间距<br>牌多时需水平滚动</div>
+        </div>
+        <div style="font-size:24px;color:#666;">→</div>
+        <div style="text-align:center;">
+          <div style="position:relative;width:100px;height:90px;">
+            <div style="position:absolute;left:0;width:40px;height:60px;background:#E53935;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:8px;width:40px;height:60px;background:#1E88E5;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:16px;width:40px;height:60px;background:#43A047;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:24px;width:40px;height:60px;background:#FDD835;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:32px;width:40px;height:60px;background:#E53935;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:40px;width:40px;height:60px;background:#1E88E5;border-radius:4px;border:1px solid #ffcc00;"></div>
+            <div style="position:absolute;left:48px;width:40px;height:60px;background:#43A047;border-radius:4px;border:1px solid #ffcc00;"></div>
+          </div>
+          <div style="font-size:11px;color:#a5d6a7;margin-top:4px;">改造后：负 margin 叠放<br>总宽度受控，无需滚动</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>具体做法</h3>
+  <ul>
+    <li><code>PlayerHand</code> 中的卡牌间距改为动态计算：<code>margin-left: -${overlap}px</code></li>
+    <li>叠放量 = <code>max(0, (cardCount * cardWidth - containerWidth) / (cardCount - 1))</code></li>
+    <li>保留 <code>overflow-x-auto</code> 作为极端情况的兜底</li>
+    <li>hover 时被叠放的卡牌通过 <code>z-index</code> 提升并稍微上移</li>
+    <li>容器宽度用 <code>max-w-[95vw]</code> 限制，保证不出屏</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>2.4 GameInfo 信息栏适配</h3>
+  <ul>
+    <li>改为 <code>flex-wrap</code>，允许信息项在窄屏时自动换行</li>
+    <li>分隔符 <code>&lt;div class="w-px h-5"&gt;</code> 在换行时隐藏（通过 <code>hidden sm:block</code>）</li>
+    <li>整体加 <code>px-3 sm:px-6</code> 响应式内边距</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>涉及的文件</h3>
+  <ul>
+    <li><code>src/components/GameBoard.tsx</code> — Grid 布局重构</li>
+    <li><code>src/components/PlayerHand.tsx</code> — 叠放策略</li>
+    <li><code>src/components/AIHand.tsx</code> — 动态尺寸适配</li>
+    <li><code>src/components/GameInfo.tsx</code> — 换行适配</li>
+  </ul>
+</div>

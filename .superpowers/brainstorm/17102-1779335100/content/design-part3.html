@@ -1,0 +1,119 @@
+<h2>设计方案 Part 3：设置页面 + 弹窗响应式改造</h2>
+<p class="subtitle">设置页可滚动 + 面板宽度适配 + 弹窗尺寸自适应</p>
+
+<div class="section">
+  <h3>3.1 设置页面改造</h3>
+  <div class="mockup">
+    <div class="mockup-header">解决：内容溢出屏幕无法滚动 + 面板过窄</div>
+    <div class="mockup-body">
+      <div style="display:flex;gap:16px;">
+        <div style="flex:1;padding:12px;border-radius:8px;background:#1a1a1a;border:1px solid #e5393540;">
+          <strong style="color:#e53935;">当前</strong>
+          <pre style="font-size:11px;color:#aaa;margin-top:8px;white-space:pre-wrap;">SettingsPage 根元素:
+  min-h-screen flex flex-col
+
+内容区:
+  flex-1 overflow-y-auto px-4 py-6
+  └─ SettingsPanel (max-w-lg = 512px)
+
+问题:
+1. 根 #root overflow:hidden 阻止滚动
+2. max-w-lg 在宽屏上太窄
+3. 分组折叠后内容间距紧凑</pre>
+        </div>
+        <div style="flex:1;padding:12px;border-radius:8px;background:#1a1a2a;border:1px solid #43A04740;">
+          <strong style="color:#43A047;">改造后</strong>
+          <pre style="font-size:11px;color:#aaa;margin-top:8px;white-space:pre-wrap;">SettingsPage 根元素:
+  h-screen flex flex-col overflow-y-auto
+
+内容区:
+  flex-1 overflow-y-auto px-4 sm:px-6 py-6
+  └─ SettingsPanel
+       max-w-lg sm:max-w-2xl mx-auto
+       分组间距 gap-5 → gap-6
+
+改进:
+1. 根元素 h-screen + overflow-y-auto 允许滚动
+2. 面板宽度响应式：小屏 lg，中屏以上 2xl
+3. 分组内项目间距从 py-2 → py-2.5，增加呼吸空间
+4. 分组边框对比度提升：border-white/15</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>具体做法</h3>
+  <ul>
+    <li><code>SettingsPage</code> 根元素：<code>h-screen</code> 替代 <code>min-h-screen</code>，确保容器有明确高度</li>
+    <li>内容区保留 <code>overflow-y-auto</code>，配合 Part 1 的全局 overflow 修复，滚动生效</li>
+    <li><code>SettingsPanel</code> 宽度：<code>max-w-lg sm:max-w-xl lg:max-w-2xl</code>，三档响应式</li>
+    <li>分组间距：<code>gap-4</code> → <code>gap-5 sm:gap-6</code></li>
+    <li>行内间距：<code>py-2</code> → <code>py-2.5</code></li>
+    <li>分组边框：<code>border-white/10</code> → <code>border-white/15</code>，稍微提升辨识度</li>
+    <li>折叠按钮：<code>py-3</code> → <code>py-3.5</code>，增加点击区域</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>3.2 弹窗/模态框统一响应式规范</h3>
+  <div class="mockup">
+    <div class="mockup-header">四个弹窗统一适配策略</div>
+    <div class="mockup-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="padding:12px;border-radius:8px;background:#1a2a1a;border:1px solid #43A04740;">
+          <strong style="color:#FDD835;">NewGameModal</strong>
+          <ul style="font-size:12px;color:#ccc;margin-top:4px;">
+            <li>预设按钮 <code>flex-wrap</code> 允许换行</li>
+            <li>难度按钮组间距 <code>gap-1</code> → <code>gap-2</code></li>
+            <li>规则标签区加 <code>py-1</code> 增加间距</li>
+            <li>整体加 <code>max-h-[85vh] overflow-y-auto</code></li>
+          </ul>
+        </div>
+        <div style="padding:12px;border-radius:8px;background:#2a1a2a;border:1px solid #9C27B040;">
+          <strong style="color:#FDD835;">ColorPicker</strong>
+          <ul style="font-size:12px;color:#ccc;margin-top:4px;">
+            <li>按钮尺寸改为响应式：<code>w-16 h-16 sm:w-[72px] sm:h-[72px]</code></li>
+            <li>间距 <code>gap-4 sm:gap-5</code></li>
+            <li>容器加 <code>p-6 sm:p-8</code> 内边距适配</li>
+          </ul>
+        </div>
+        <div style="padding:12px;border-radius:8px;background:#1a1a2a;border:1px solid #1E88E540;">
+          <strong style="color:#FDD835;">Scoreboard</strong>
+          <ul style="font-size:12px;color:#ccc;margin-top:4px;">
+            <li><code>min-w-[340px]</code> → <code>min-w-[280px] sm:min-w-[340px]</code></li>
+            <li>玩家列表加 <code>max-h-[40vh] overflow-y-auto</code> 防溢出</li>
+            <li>内边距 <code>p-6 sm:p-8</code></li>
+          </ul>
+        </div>
+        <div style="padding:12px;border-radius:8px;background:#2a1a1a;border:1px solid #E5393540;">
+          <strong style="color:#FDD835;">ChallengeModal</strong>
+          <ul style="font-size:12px;color:#ccc;margin-top:4px;">
+            <li>按钮间距 <code>gap-3</code> → <code>gap-4</code></li>
+            <li>内边距跟随统一规范</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>统一弹窗规范</h3>
+  <ul>
+    <li>所有弹窗遮罩：<code>fixed inset-0 z-50</code>，<code>bg-black/50 sm:bg-black/60</code></li>
+    <li>内容容器：<code>max-w-[90vw] sm:max-w-none</code>，防止小屏溢出</li>
+    <li>内边距：<code>p-5 sm:p-8</code>，两档响应式</li>
+    <li>圆角：<code>rounded-xl sm:rounded-2xl</code></li>
+    <li>有长列表的弹窗加 <code>max-h-[85vh]</code> 限制高度</li>
+  </ul>
+</div>
+
+<div class="section">
+  <h3>涉及的文件</h3>
+  <ul>
+    <li><code>src/components/SettingsPage.tsx</code> — 滚动修复 + 布局调整</li>
+    <li><code>src/components/SettingsPanel.tsx</code> — 宽度响应式 + 间距优化</li>
+    <li><code>src/components/NewGameModal.tsx</code> — flex-wrap + 间距</li>
+    <li><code>src/components/ColorPicker.tsx</code> — 按钮尺寸响应式</li>
+    <li><code>src/components/Scoreboard.tsx</code> — 宽度适配 + 长列表滚动</li>
+    <li><code>src/components/ChallengeModal.tsx</code> — 间距调整</li>
+  </ul>
+</div>
