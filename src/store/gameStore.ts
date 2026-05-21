@@ -1104,12 +1104,13 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
 
     const player = state.players[state.currentPlayerIndex]
     if (!player || !player.isHuman) return
-    if (!state.lastPlayedBy || state.lastPlayedBy.playerIndex !== state.currentPlayerIndex) return
+    if (state.lastPlayedBy && state.lastPlayedBy.playerIndex !== state.currentPlayerIndex) return
 
     const newDiscardPile = [...state.discardPile]
     const card = newDiscardPile.pop()
     if (!card) return
-    if (card.id !== state.lastPlayedBy.cardId) return
+    if (state.lastPlayedBy && card.id !== state.lastPlayedBy.cardId) return
+    if (!state.lastPlayedBy && card.type !== 'wild' && card.type !== 'wild4') return
 
     const newHand = [...player.hand, card]
     const newPlayers = state.players.map((p, i) =>
