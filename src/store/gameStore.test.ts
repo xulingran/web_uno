@@ -33,11 +33,15 @@ describe('gameStore', () => {
       lastPlayedBy: null,
       lastActionEffect: null,
       colorBeforeWild: null,
+      lastDrawEvent: null,
+      drawAnimating: false,
+      pendingDrawResolution: null,
     })
   })
 
   it('initGame — 初始化 3 名玩家（1 玩家 + 2 AI），每人 7 张牌，phase 为 playing（或 color-picking），总牌数为 108', () => {
     useGameStore.getState().initGame()
+    useGameStore.getState().completeDealing()
 
     const state = useGameStore.getState()
 
@@ -46,9 +50,9 @@ describe('gameStore', () => {
     expect(state.players[1].isHuman).toBe(false)
     expect(state.players[2].isHuman).toBe(false)
 
-    for (const player of state.players) {
-      expect(player.hand).toHaveLength(7)
-    }
+    expect(state.players[0].hand.length).toBeGreaterThanOrEqual(7)
+    expect(state.players[1].hand.length).toBe(7)
+    expect(state.players[2].hand.length).toBe(7)
 
     expect(['playing', 'color-picking']).toContain(state.phase)
     expect(state.scores).toHaveLength(3)
@@ -120,6 +124,7 @@ describe('gameStore', () => {
     useGameStore.getState().initGame()
 
     useGameStore.getState().startNewGame()
+    useGameStore.getState().completeDealing()
 
     const state = useGameStore.getState()
     expect(state.players).toHaveLength(3)
@@ -127,9 +132,9 @@ describe('gameStore', () => {
     expect(state.players[1].isHuman).toBe(false)
     expect(state.players[2].isHuman).toBe(false)
 
-    for (const player of state.players) {
-      expect(player.hand).toHaveLength(7)
-    }
+    expect(state.players[0].hand.length).toBeGreaterThanOrEqual(7)
+    expect(state.players[1].hand.length).toBe(7)
+    expect(state.players[2].hand.length).toBe(7)
 
     expect(['playing', 'color-picking']).toContain(state.phase)
     expect(state.scores).toHaveLength(3)
@@ -206,6 +211,7 @@ describe('gameStore', () => {
     vi.spyOn(deckModule, 'shuffleDeck').mockReturnValue(mockDeck)
 
     useGameStore.getState().initGame()
+    useGameStore.getState().completeDealing()
 
     const state = useGameStore.getState()
     expect(state.discardPile[state.discardPile.length - 1].type).toBe('skip')
@@ -242,6 +248,8 @@ describe('gameStore', () => {
     const handLenAfter = useGameStore.getState().players[0].hand.length
 
     expect(handLenAfter).toBe(handLenBefore + 1)
+    expect(useGameStore.getState().drawAnimating).toBe(true)
+    expect(useGameStore.getState().pendingDrawResolution).toEqual({ type: 'advanceTurn', skipCount: 1 })
   })
 
   it('playCard — 打出 Wild 牌时 phase 变为 color-picking', () => {
@@ -356,7 +364,8 @@ describe('gameStore', () => {
     const state = useGameStore.getState()
     expect(state.players[1].hand.length).toBe(handLenBefore + 2)
     expect(state.pendingDrawCount).toBe(0)
-    expect(state.currentPlayerIndex).toBe(2)
+    expect(state.drawAnimating).toBe(true)
+    expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 2 })
     expect(state.phase).toBe('playing')
   })
 
@@ -403,7 +412,8 @@ describe('gameStore', () => {
     state = useGameStore.getState()
     expect(state.players[1].hand.length).toBe(handLenBefore + 4)
     expect(state.pendingDrawCount).toBe(0)
-    expect(state.currentPlayerIndex).toBe(2)
+    expect(state.drawAnimating).toBe(true)
+    expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 2 })
     expect(state.phase).toBe('playing')
   })
 
@@ -438,11 +448,82 @@ describe('gameStore', () => {
     const state = useGameStore.getState()
     expect(state.players[1].hand.length).toBe(handLenBefore + 2)
     expect(state.pendingDrawCount).toBe(0)
-    expect(state.currentPlayerIndex).toBe(0)
+    expect(state.drawAnimating).toBe(true)
+    expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 0 })
     expect(state.phase).toBe('playing')
   })
 
   it('配置校验 — 默认配置中 challengeWild4 已开启', () => {
     expect(DEFAULT_CONFIG.actionCards.challengeWild4).toBe(true)
+  })
+
+  it('completeDrawAnimation — advanceTurn 类型，推进回合并清除动画状态', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      drawAnimating: true,
+      pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 },
+      players: [
+        { id: 'p0', name: '你', hand: [{ id: 'red-1', color: 'red', type: 'number', value: 1 }], isHuman: true },
+        { id: 'p1', name: '电脑A', hand: [], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0],
+    })
+
+    useGameStore.getState().completeDrawAnimation()
+
+    const state = useGameStore.getState()
+    expect(state.drawAnimating).toBe(false)
+    expect(state.pendingDrawResolution).toBe(null)
+    expect(state.currentPlayerIndex).toBe(1)
+  })
+
+  it('completeDrawAnimation — setPlayer 类型，直接设置玩家索引并清除动画状态', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      drawAnimating: true,
+      pendingDrawResolution: { type: 'setPlayer', playerIndex: 2 },
+      players: [
+        { id: 'p0', name: '你', hand: [], isHuman: true },
+        { id: 'p1', name: '电脑A', hand: [], isHuman: false },
+        { id: 'p2', name: '电脑B', hand: [], isHuman: false },
+      ],
+      currentPlayerIndex: 1,
+      direction: 'clockwise',
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0, 0],
+    })
+
+    useGameStore.getState().completeDrawAnimation()
+
+    const state = useGameStore.getState()
+    expect(state.drawAnimating).toBe(false)
+    expect(state.pendingDrawResolution).toBe(null)
+    expect(state.currentPlayerIndex).toBe(2)
+  })
+
+  it('completeDrawAnimation — null 类型，仅清除动画状态', () => {
+    useGameStore.setState({
+      phase: 'playing',
+      drawAnimating: true,
+      pendingDrawResolution: null,
+      players: [
+        { id: 'p0', name: '你', hand: [], isHuman: true },
+        { id: 'p1', name: '电脑A', hand: [], isHuman: false },
+      ],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      config: { ...DEFAULT_CONFIG },
+      scores: [0, 0],
+    })
+
+    useGameStore.getState().completeDrawAnimation()
+
+    const state = useGameStore.getState()
+    expect(state.drawAnimating).toBe(false)
+    expect(state.pendingDrawResolution).toBe(null)
+    expect(state.currentPlayerIndex).toBe(0)
   })
 })

@@ -14,7 +14,7 @@ function FanCards({ count, size }: { count: number; size: 'top' | 'side' }) {
   const stepAngle = Math.min(15, maxAngle / Math.max(count, 1))
 
   return (
-    <div className="relative" style={{ width: size === 'top' ? 70 : 60, height: size === 'top' ? 105 : 90 }}>
+    <div className={`relative ${size === 'top' ? 'fan-cards-top' : 'fan-cards-side'}`}>
       {Array.from({ length: count }, (_, i) => {
         const angle = (i - (count - 1) / 2) * stepAngle
         const isEnd = i === count - 1
@@ -44,28 +44,35 @@ export default function AIHand({ player, isCurrentTurn, position }: AIHandProps)
   const maxDisplay = isSide ? 7 : 10
   const displayCount = Math.min(player.hand.length, maxDisplay)
 
-  const content = (
-    <div className={`flex flex-col items-center gap-2 ${isCurrentTurn ? 'animate-pulse-glow rounded-xl p-1' : ''}`}>
-      <div
-        className={`px-3 py-1 rounded-lg font-game text-sm transition-all duration-300 ${
-          isCurrentTurn
-            ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/50 scale-110'
-            : 'bg-white/10 text-white/80'
-        }`}
-      >
-        {player.name} · {player.hand.length}张
-      </div>
-      <FanCards count={displayCount} size={cardSize} />
+  const label = (
+    <div
+      className={`px-3 py-1 rounded-lg font-game text-sm transition-all duration-300 whitespace-nowrap ${
+        isCurrentTurn
+          ? 'bg-yellow-400 text-black shadow-lg shadow-yellow-400/50 scale-110'
+          : 'bg-white/10 text-white/80'
+      }`}
+    >
+      {player.name} · {player.hand.length}张
     </div>
   )
 
   if (isSide) {
     return (
-      <div style={{ transform: `rotate(${rotation}deg)` }}>
-        {content}
+      <div className={`flex flex-col items-center gap-2 ${isCurrentTurn ? 'animate-pulse-glow rounded-xl p-1' : ''}`}>
+        <div style={{ transform: `rotate(${rotation}deg)` }}>
+          <FanCards count={displayCount} size={cardSize} />
+        </div>
+        <div className="relative z-10">
+          {label}
+        </div>
       </div>
     )
   }
 
-  return content
+  return (
+    <div className={`flex flex-col items-center gap-2 ${isCurrentTurn ? 'animate-pulse-glow rounded-xl p-1' : ''}`}>
+      {label}
+      <FanCards count={displayCount} size={cardSize} />
+    </div>
+  )
 }

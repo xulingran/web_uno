@@ -23,11 +23,11 @@ const colorNameMap: Record<CardColor, string> = {
 export default function DiscardPile({ topCard, currentColor }: DiscardPileProps) {
   return (
     <div className="flex flex-col items-center gap-2">
-      <div className="w-[98px] h-[143px]">
+      <div className="discard-pile-slot">
         {topCard ? (
           <Card card={topCard} playable={false} />
         ) : (
-          <div className="w-[90px] h-[135px] rounded-xl border-2 border-dashed border-white/30 flex items-center justify-center">
+          <div className="discard-pile-empty">
             <span className="text-white/40 text-sm">空</span>
           </div>
         )}

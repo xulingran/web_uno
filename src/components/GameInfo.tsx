@@ -22,7 +22,7 @@ const colorNameMap: Record<CardColor, string> = {
 
 export default function GameInfo({ direction, currentColor, currentPlayerName }: GameInfoProps) {
   return (
-    <div className="flex items-center gap-6 px-6 py-2.5 rounded-xl bg-black/40 backdrop-blur-sm border border-white/10 font-game text-sm">
+    <div className="flex flex-wrap items-center justify-center gap-x-4 sm:gap-x-6 gap-y-1 px-3 sm:px-6 py-2.5 rounded-xl bg-black/40 backdrop-blur-sm border border-white/10 font-game text-sm">
       <div className="flex items-center gap-1.5 text-white/80">
         <span className="text-base">
           {direction === 'clockwise' ? '↻' : '↺'}
@@ -32,7 +32,7 @@ export default function GameInfo({ direction, currentColor, currentPlayerName }:
         </span>
       </div>
 
-      <div className="w-px h-5 bg-white/20" />
+      <div className="w-px h-5 bg-white/20 hidden sm:block" />
 
       <div className="flex items-center gap-1.5">
         <div
@@ -44,7 +44,7 @@ export default function GameInfo({ direction, currentColor, currentPlayerName }:
         </span>
       </div>
 
-      <div className="w-px h-5 bg-white/20" />
+      <div className="w-px h-5 bg-white/20 hidden sm:block" />
 
       <div className="text-white/80">
         当前回合: <span className="text-yellow-300">{currentPlayerName}</span>

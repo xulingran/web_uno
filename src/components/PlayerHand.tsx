@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useMemo } from 'react'
 import type { Card as CardType } from '@/utils/types'
 import Card from './Card'
 
@@ -11,15 +11,29 @@ interface PlayerHandProps {
   isCurrentTurn: boolean
 }
 
+const CARD_WIDTH_PX = 90
+const MIN_OVERLAP_PX = 4
+
 const PlayerHand = forwardRef<HTMLDivElement, PlayerHandProps>(function PlayerHand({ cards, onPlayCard, playableCards, stackableCards, jumpInCards, isCurrentTurn }, ref) {
+  const overlap = useMemo(() => {
+    if (typeof window === 'undefined' || cards.length <= 1) return 0
+    const containerWidth = window.innerWidth * 0.92
+    const totalWidth = cards.length * CARD_WIDTH_PX
+    if (totalWidth <= containerWidth) return 0
+    return Math.min(
+      CARD_WIDTH_PX - MIN_OVERLAP_PX,
+      Math.max(0, (totalWidth - containerWidth) / (cards.length - 1))
+    )
+  }, [cards.length])
+
   return (
-    <div className="flex flex-col items-center gap-2 w-full">
+    <div className="flex flex-col items-center gap-2 w-full max-w-[95vw]">
       {isCurrentTurn && (
-        <div className="text-yellow-300 font-game text-lg animate-pulse">
+        <div className="text-yellow-300 font-game text-base sm:text-lg animate-pulse">
           轮到你了！
         </div>
       )}
-      <div ref={ref} className="w-full max-w-full overflow-x-auto flex items-end justify-center gap-1 px-4 py-1">
+      <div ref={ref} className="w-full overflow-x-auto flex items-end justify-center px-2 sm:px-4 py-1">
         {cards.map((card, index) => {
           const isPlayable = playableCards.has(card.id)
           const isStackable = stackableCards?.has(card.id) ?? false
@@ -36,9 +50,11 @@ const PlayerHand = forwardRef<HTMLDivElement, PlayerHandProps>(function PlayerHa
           return (
             <div
               key={card.id}
-              className={`flex-shrink-0 ${playable ? 'animate-slide-up' : ''} ${extraClass}`}
+              className={`flex-shrink-0 hover:z-50 hover:-translate-y-2 ${playable ? 'animate-slide-up' : ''} ${extraClass}`}
               style={{
                 zIndex: index,
+                marginLeft: index === 0 ? 0 : -overlap,
+                transition: 'margin-left 0.2s ease, transform 0.2s ease',
               }}
             >
               <Card

@@ -36,7 +36,7 @@ export default function Scoreboard({ visible, players, scores, winner, onNewGame
       }`}
     >
       <div
-        className={`flex flex-col items-center gap-6 p-8 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl min-w-[340px] transition-all duration-300 ${
+        className={`flex flex-col items-center gap-6 p-5 sm:p-8 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl min-w-[280px] sm:min-w-[340px] transition-all duration-300 ${
           animating ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
         }`}
       >
@@ -47,7 +47,7 @@ export default function Scoreboard({ visible, players, scores, winner, onNewGame
           </h2>
         </div>
 
-        <div className="w-full flex flex-col gap-3">
+        <div className="w-full flex flex-col gap-3 max-h-[40vh] overflow-y-auto">
           {players.map((player, idx) => {
             const isWinner = winner && player.id === winner.id
             const cardPoints = isWinner ? 0 : player.hand.reduce((sum, c) => sum + getCardScore(c, config), 0)

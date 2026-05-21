@@ -26,7 +26,7 @@ export default function ChallengeModal({ visible, onChallenge, onAccept }: Chall
       }`}
     >
       <div
-        className={`flex flex-col items-center gap-6 p-8 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl transition-all duration-300 ${
+        className={`flex flex-col items-center gap-6 p-5 sm:p-8 rounded-xl sm:rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl transition-all duration-300 ${
           animating ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
         }`}
       >

@@ -1,10 +1,19 @@
 import { create } from 'zustand'
-import type { Card, CardColor, Direction, GamePhase, Player } from '@/utils/types'
+import type { Card, CardColor, Direction, GamePhase, Player, DealItem, DealAnimConfig, GameLogEntry, DrawResolution } from '@/utils/types'
 import type { GameConfig } from '@/config/types'
 import { useConfigStore } from './configStore'
 import { createDeck, shuffleDeck, dealCards, drawCards, getCardScore, ensureNotEmpty } from '@/utils/deck'
 import { canPlayCard, canStack, canJumpIn, getNextPlayerIndex, getActionEffect, getCardActionEffectType, type ActionEffect } from '@/utils/rules'
 import { shouldChallengeWild4 } from '@/utils/ai'
+
+const DEFAULT_DEAL_ANIM_CONFIG: DealAnimConfig = {
+  singleCardDuration: 200,
+  cardInterval: 100,
+  timeout: 5000,
+  easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+}
+
+const LOG_MAX_ENTRIES = 500
 
 interface GameActions {
   initGame: () => void
@@ -16,6 +25,12 @@ interface GameActions {
   acceptDraw: () => void
   resolveUno: (confirmed: boolean) => void
   resolveChallenge: (challenge: boolean) => void
+  addDealtCard: (index: number) => void
+  completeDealing: () => void
+  toggleDebugMode: () => void
+  addLogEntry: (entry: Omit<GameLogEntry, 'timestamp'>) => void
+  clearLogs: () => void
+  completeDrawAnimation: () => void
 }
 
 interface StoreState {
@@ -40,6 +55,14 @@ interface StoreState {
   lastActionEffect: { type: string; color?: string; timestamp: number } | null
   colorBeforeWild: CardColor | null
   lastDrawEvent: { playerIndex: number; cardCount: number; timestamp: number } | null
+  dealSequence: DealItem[]
+  dealtIndex: number
+  dealAnimConfig: DealAnimConfig
+  pendingInitialTopCard: Card | null
+  debugMode: boolean
+  logEntries: GameLogEntry[]
+  drawAnimating: boolean
+  pendingDrawResolution: DrawResolution
 }
 
 function getFirstValidTopCard(
@@ -321,6 +344,15 @@ function applyCardEffectAndAdvanceTurn(
   handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
 }
 
+function formatCardInfo(card: Card): string {
+  const colorMap: Record<string, string> = { red: '红色', yellow: '黄色', blue: '蓝色', green: '绿色' }
+  const typeMap: Record<string, string> = { number: '', skip: '跳过', reverse: '反转', draw2: '+2', wild: '万能', wild4: '万能+4' }
+  const colorStr = card.color ? (colorMap[card.color] ?? '') : ''
+  const typeStr = typeMap[card.type] ?? ''
+  if (card.type === 'number') return `${colorStr} ${card.value}`
+  return `${colorStr} ${typeStr}`.trim()
+}
+
 export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   players: [],
   drawPile: [],
@@ -353,6 +385,14 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   lastActionEffect: null,
   colorBeforeWild: null,
   lastDrawEvent: null,
+  dealSequence: [],
+  dealtIndex: 0,
+  dealAnimConfig: DEFAULT_DEAL_ANIM_CONFIG,
+  pendingInitialTopCard: null,
+  debugMode: false,
+  logEntries: [],
+  drawAnimating: false,
+  pendingDrawResolution: null,
 
   initGame: () => {
     const config = useConfigStore.getState().config
@@ -363,13 +403,20 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
 
     const names = ['你', '电脑A', '电脑B', '电脑C', '电脑D', '电脑E']
     const players: Player[] = [
-      { id: 'p0', name: names[0], hand: dealt[0], isHuman: true },
+      { id: 'p0', name: names[0], hand: [], isHuman: true },
     ]
     for (let i = 1; i < totalPlayers; i++) {
-      players.push({ id: `p${i}`, name: names[i] || `电脑${i}`, hand: dealt[i], isHuman: false })
+      players.push({ id: `p${i}`, name: names[i] || `电脑${i}`, hand: [], isHuman: false })
     }
 
     const { drawPile, discardPile, topCard } = getFirstValidTopCard(remaining, [])
+
+    const dealSequence: DealItem[] = []
+    for (let round = 0; round < config.params.initialHandSize; round++) {
+      for (let p = 0; p < totalPlayers; p++) {
+        dealSequence.push({ playerIndex: p, card: dealt[p][round] })
+      }
+    }
 
     let initialDirection: Direction = 'clockwise'
     let initialPlayerIndex = 0
@@ -406,7 +453,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         : initialPlayerIndex,
       direction: initialDirection,
       currentColor: topCard.color ?? 'red',
-      phase: topCard.type === 'wild' ? 'color-picking' : 'playing',
+      phase: 'dealing',
       winner: null,
       scores: Array(totalPlayers).fill(0),
       cardJustDrawn: null,
@@ -415,12 +462,22 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       unoCalledPlayer: null,
       stackingWaiting: false,
       challengePlayerIndex: null,
-      turnStartTime: config.params.turnTimeLimit > 0 ? Date.now() : null,
+      turnStartTime: null,
       lastPlayedBy: null,
       lastActionEffect: null,
       colorBeforeWild: null,
       lastDrawEvent: null,
+      dealSequence,
+      dealtIndex: 0,
+      dealAnimConfig: DEFAULT_DEAL_ANIM_CONFIG,
+      pendingInitialTopCard: { ...topCard, id: topCard.id },
+      debugMode: get().debugMode,
+      logEntries: get().logEntries,
+      drawAnimating: false,
+      pendingDrawResolution: null,
     })
+
+    get().addLogEntry({ event: 'game-start', playerName: '系统' })
 
     if (initialSkipCount > 0) {
       get().advanceTurn(initialSkipCount)
@@ -485,7 +542,20 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     const victoryResult = checkVictory(newPlayers, playingPlayerIndex, baseUpdate, state.config, state.scores)
     if (victoryResult.hasWinner) {
       set(victoryResult.victoryUpdate!)
+      get().addLogEntry({ event: 'round-over', playerName: '系统', extra: `${actualPlayer.name} 获胜` })
       return
+    }
+
+    const cardInfo = formatCardInfo(card)
+    let extra: string | undefined
+    if (card.type === 'reverse') extra = '方向反转'
+    if (card.type === 'draw2') extra = `叠加至${state.pendingDrawCount + 2}张`
+    get().addLogEntry({ event: 'play', playerName: actualPlayer.name, cardInfo, extra })
+    if (card.type === 'reverse') {
+      get().addLogEntry({ event: 'reverse', playerName: actualPlayer.name, cardInfo, extra: '方向反转' })
+    }
+    if (card.type === 'draw2') {
+      get().addLogEntry({ event: 'draw2-stack', playerName: actualPlayer.name, cardInfo, extra: `叠加至${state.pendingDrawCount + 2}张` })
     }
 
     const effect = getActionEffect(card, newPlayers.length, state.config.actionCards.reverseAsSkip)
@@ -502,107 +572,128 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     )
   },
 
-  drawCard: () => {
-    const state = get()
-    if (state.phase !== 'playing') return
-    const player = state.players[state.currentPlayerIndex]
-    if (!player.isHuman) return
+  drawCard: (() => {
+    let isDrawing = false
+    return () => {
+      if (isDrawing) return
+      const state = get()
+      if (state.phase !== 'playing') return
+      const player = state.players[state.currentPlayerIndex]
+      if (!player.isHuman) return
 
-    if (state.pendingDrawCount <= 0) {
-      const discardTop = state.discardPile[state.discardPile.length - 1]
-      const hasPlayable = player.hand.some((c) => canPlayCard(c, discardTop, state.currentColor, player.hand))
-      if (hasPlayable) return
-    }
-
-    let currentDrawPile = state.drawPile
-    let currentDiscardPile = state.discardPile
-
-    const reshuffled = ensureNotEmpty(currentDrawPile, currentDiscardPile)
-    currentDrawPile = reshuffled.drawPile
-    currentDiscardPile = reshuffled.discardPile
-
-    if (currentDrawPile.length === 0) {
-      get().advanceTurn(1)
-      return
-    }
-
-    const config = state.config
-    const newHand = [...player.hand]
-    const topCard = currentDiscardPile[currentDiscardPile.length - 1]
-
-    if (config.draw.drawToMatch) {
-      let foundPlayable = false
-      let drawnCard: Card | null = null
-
-      while (currentDrawPile.length > 0 && !foundPlayable) {
-        drawnCard = currentDrawPile.shift()!
-        newHand.push(drawnCard)
-        if (canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
-          foundPlayable = true
-        }
-        if (currentDrawPile.length === 0 && currentDiscardPile.length > 1) {
-          const reshuffled2 = ensureNotEmpty(currentDrawPile, currentDiscardPile)
-          currentDrawPile = reshuffled2.drawPile
-          currentDiscardPile = reshuffled2.discardPile
-        }
+      if (state.pendingDrawCount <= 0) {
+        const discardTop = state.discardPile[state.discardPile.length - 1]
+        const hasPlayable = player.hand.some((c) => canPlayCard(c, discardTop, state.currentColor, player.hand))
+        if (hasPlayable) return
       }
 
-      const newPlayers = state.players.map((p, i) =>
-        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
-      )
+      isDrawing = true
 
-      set({
-        players: newPlayers,
-        drawPile: currentDrawPile,
-        discardPile: currentDiscardPile,
-        cardJustDrawn: drawnCard,
-        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: newHand.length - player.hand.length, timestamp: Date.now() },
-      })
+      let currentDrawPile = state.drawPile
+      let currentDiscardPile = state.discardPile
 
-      if (foundPlayable && drawnCard && canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
-        return
-      }
-    } else {
-      const drawCount = config.draw.multiDrawCount
-      const actual = Math.min(drawCount, currentDrawPile.length)
-      if (actual === 0) {
+      const reshuffled = ensureNotEmpty(currentDrawPile, currentDiscardPile)
+      currentDrawPile = reshuffled.drawPile
+      currentDiscardPile = reshuffled.discardPile
+
+      if (currentDrawPile.length === 0) {
+        isDrawing = false
         get().advanceTurn(1)
         return
       }
-      const drawn = currentDrawPile.splice(0, actual)
-      newHand.push(...drawn)
-      const lastDrawn = drawn[drawn.length - 1]
 
-      const newPlayers = state.players.map((p, i) =>
-        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
-      )
+      const config = state.config
+      const newHand = [...player.hand]
+      const topCard = currentDiscardPile[currentDiscardPile.length - 1]
+
+      if (config.draw.drawToMatch) {
+        let foundPlayable = false
+        let drawnCard: Card | null = null
+
+        while (currentDrawPile.length > 0 && !foundPlayable) {
+          drawnCard = currentDrawPile.shift()!
+          newHand.push(drawnCard)
+          if (canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
+            foundPlayable = true
+          }
+          if (currentDrawPile.length === 0 && currentDiscardPile.length > 1) {
+            const reshuffled2 = ensureNotEmpty(currentDrawPile, currentDiscardPile)
+            currentDrawPile = reshuffled2.drawPile
+            currentDiscardPile = reshuffled2.discardPile
+          }
+        }
+
+        const newPlayers = state.players.map((p, i) =>
+          i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+        )
+
+        set({
+          players: newPlayers,
+          drawPile: currentDrawPile,
+          discardPile: currentDiscardPile,
+          cardJustDrawn: drawnCard,
+          drawAnimating: true,
+          lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: newHand.length - player.hand.length, timestamp: Date.now() },
+        })
+        get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${newHand.length - player.hand.length}张` })
+
+        if (foundPlayable && drawnCard && canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
+          isDrawing = false
+          return
+        }
+      } else {
+        const drawCount = config.draw.multiDrawCount
+        const actual = Math.min(drawCount, currentDrawPile.length)
+        if (actual === 0) {
+          isDrawing = false
+          get().advanceTurn(1)
+          return
+        }
+        const drawn = currentDrawPile.splice(0, actual)
+        newHand.push(...drawn)
+        const lastDrawn = drawn[drawn.length - 1]
+
+        const newPlayers = state.players.map((p, i) =>
+          i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+        )
 
       set({
         players: newPlayers,
         drawPile: currentDrawPile,
         discardPile: currentDiscardPile,
         cardJustDrawn: lastDrawn,
+        drawAnimating: true,
         lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
       })
+      get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawn.length}张` })
 
-      if (canPlayCard(lastDrawn, topCard, state.currentColor, newHand)) {
-        return
+        if (canPlayCard(lastDrawn, topCard, state.currentColor, newHand)) {
+          isDrawing = false
+          return
+        }
       }
-    }
 
-    get().advanceTurn(1)
-  },
+      isDrawing = false
+      set({ pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 } })
+    }
+  })(),
 
   pickColor: (color: CardColor) => {
     const state = get()
     if (state.phase !== 'color-picking') return
 
     const topCard = state.discardPile[state.discardPile.length - 1]
+    const colorMap: Record<string, string> = { red: '红色', yellow: '黄色', blue: '蓝色', green: '绿色' }
+    const currentPlayer = state.players[state.currentPlayerIndex]
 
     set({
       currentColor: color,
       phase: 'playing',
     })
+
+    if (currentPlayer) {
+      get().addLogEntry({ event: 'color-pick', playerName: currentPlayer.name, extra: `选择了 ${colorMap[color] ?? color}` })
+    }
 
     if (topCard.type === 'wild4' && state.config.actionCards.challengeWild4) {
       const lastPlayedBy = state.lastPlayedBy
@@ -712,16 +803,21 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       set({
         players: newPlayers,
         pendingDrawCount: 0,
-        currentPlayerIndex: afterSkip,
         drawPile: newDrawPile,
         discardPile: newDiscardPile,
         cardJustDrawn: null,
         stackingWaiting: false,
+        drawAnimating: true,
+        lastDrawEvent: { playerIndex: nextIdx, cardCount: drawn.length, timestamp: Date.now() },
+        pendingDrawResolution: { type: 'setPlayer', playerIndex: afterSkip },
       })
       return
     }
 
     const nextIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, skipCount - 1)
+    if (skipCount > 1 && state.players[nextIdx]) {
+      get().addLogEntry({ event: 'skip', playerName: state.players[nextIdx].name })
+    }
     set({
       currentPlayerIndex: nextIdx,
       cardJustDrawn: null,
@@ -750,6 +846,13 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       lastPlayedBy: null,
       lastActionEffect: null,
       colorBeforeWild: null,
+      lastDrawEvent: null,
+      dealSequence: [],
+      dealtIndex: 0,
+      dealAnimConfig: DEFAULT_DEAL_ANIM_CONFIG,
+      pendingInitialTopCard: null,
+      drawAnimating: false,
+      pendingDrawResolution: null,
     })
     get().initGame()
   },
@@ -774,13 +877,15 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         drawPile: newDrawPile,
         discardPile: newDiscardPile,
         pendingDrawCount: 0,
+        drawAnimating: true,
         lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
       })
+      set({ pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 } })
     } else {
       set({ pendingDrawCount: 0 })
+      get().advanceTurn(1)
+      return
     }
-
-    get().advanceTurn(1)
   },
 
   resolveUno: (confirmed: boolean) => {
@@ -816,6 +921,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       const player = state.players[state.currentPlayerIndex]
       if (player) {
         set({ unoCalledPlayer: player.id })
+        get().addLogEntry({ event: 'uno-call', playerName: player.name })
       }
     }
 
@@ -834,13 +940,14 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     }
 
     const lastPlayedBy = state.lastPlayedBy
+    const challengerIdx = state.challengePlayerIndex ?? (lastPlayedBy ? getNextPlayerIndex(lastPlayedBy.playerIndex, state.direction, state.players.length, 0) : 0)
+    const challengerName = state.players[challengerIdx]?.name ?? '未知'
+
     if (!lastPlayedBy) {
       set({ phase: 'playing', pendingDrawCount: state.pendingDrawCount + 4 })
       get().advanceTurn(1)
       return
     }
-
-    const challengerIdx = state.challengePlayerIndex ?? getNextPlayerIndex(lastPlayedBy.playerIndex, state.direction, state.players.length, 0)
 
     if (challenge) {
       const playerIdx = lastPlayedBy.playerIndex
@@ -870,6 +977,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
           challengePlayerIndex: null,
           currentPlayerIndex: challengerIdx,
         })
+        get().addLogEntry({ event: 'wild4-challenge', playerName: challengerName, cardInfo: '万能+4', extra: '挑战成功' })
         return
       } else {
         const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
@@ -889,6 +997,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
           pendingDrawCount: 0,
           challengePlayerIndex: null,
         })
+        get().addLogEntry({ event: 'wild4-challenge', playerName: challengerName, cardInfo: '万能+4', extra: '挑战失败' })
         const afterSkip = getNextPlayerIndex(challengerIdx, state.direction, state.players.length, 1)
         set({ currentPlayerIndex: afterSkip })
         return
@@ -900,5 +1009,73 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       challengePlayerIndex: null,
     })
     get().advanceTurn(1)
+  },
+
+  addDealtCard: (index: number) => {
+    const state = get()
+    if (index < 0 || index >= state.dealSequence.length) return
+    const dealItem = state.dealSequence[index]
+    const newPlayers = state.players.map((p, i) =>
+      i === dealItem.playerIndex ? { ...p, hand: [...p.hand, dealItem.card] } : p
+    )
+    const playerName = state.players[dealItem.playerIndex]?.name ?? `玩家${dealItem.playerIndex}`
+    const isHuman = state.players[dealItem.playerIndex]?.isHuman ?? false
+    const cardInfo = isHuman ? formatCardInfo(dealItem.card) : '背面'
+    set({
+      players: newPlayers,
+      dealtIndex: index + 1,
+    })
+    get().addLogEntry({ event: 'deal', playerName, cardInfo })
+  },
+
+  completeDealing: () => {
+    const state = get()
+    if (state.phase !== 'dealing') return
+    const remainingDealItems = state.dealSequence.slice(state.dealtIndex)
+    const newPlayers = [...state.players]
+    for (const item of remainingDealItems) {
+      newPlayers[item.playerIndex] = {
+        ...newPlayers[item.playerIndex],
+        hand: [...newPlayers[item.playerIndex].hand, item.card],
+      }
+    }
+    const topCard = state.pendingInitialTopCard
+    const nextPhase = topCard && topCard.type === 'wild' ? 'color-picking' : 'playing'
+    set({
+      players: newPlayers,
+      phase: nextPhase,
+      dealSequence: [],
+      dealtIndex: 0,
+      pendingInitialTopCard: null,
+      turnStartTime: state.config.params.turnTimeLimit > 0 ? Date.now() : null,
+    })
+  },
+
+  toggleDebugMode: () => {
+    set({ debugMode: !get().debugMode })
+  },
+
+  addLogEntry: (entry) => {
+    const newEntry: GameLogEntry = { ...entry, timestamp: Date.now() }
+    const newEntries = [...get().logEntries, newEntry]
+    if (newEntries.length > LOG_MAX_ENTRIES) {
+      newEntries.splice(0, newEntries.length - LOG_MAX_ENTRIES)
+    }
+    set({ logEntries: newEntries })
+  },
+
+  clearLogs: () => {
+    set({ logEntries: [] })
+  },
+
+  completeDrawAnimation: () => {
+    const state = get()
+    const resolution = state.pendingDrawResolution
+    set({ drawAnimating: false, pendingDrawResolution: null })
+    if (resolution?.type === 'advanceTurn') {
+      get().advanceTurn(resolution.skipCount)
+    } else if (resolution?.type === 'setPlayer') {
+      set({ currentPlayerIndex: resolution.playerIndex })
+    }
   },
 }))

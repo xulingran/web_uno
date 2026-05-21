@@ -15,7 +15,7 @@ const colorMap: Record<string, string> = {
 }
 
 function CornerContent({ card, small }: { card: CardType; small?: boolean }) {
-  const sizeClass = small ? 'text-[10px]' : 'text-[14px]'
+  const sizeClass = small ? 'card-corner-sm' : ''
 
   switch (card.type) {
     case 'number':
@@ -70,37 +70,35 @@ function CornerContent({ card, small }: { card: CardType; small?: boolean }) {
 }
 
 function CenterContent({ card, small }: { card: CardType; small?: boolean }) {
-  const numberSize = small ? 'text-[24px]' : 'text-[36px]'
-  const symbolSize = small ? 'text-[20px]' : 'text-[28px]'
 
   switch (card.type) {
     case 'number':
       return (
-        <div className={`card-center ${numberSize}`} style={{ color: colorMap[card.color!] }}>
+        <div className={`card-center ${small ? 'card-center-sm' : ''}`} style={{ color: colorMap[card.color!] }}>
           {card.value}
         </div>
       )
     case 'skip':
       return (
-        <div className={`card-center-symbol ${symbolSize}`} style={{ color: colorMap[card.color!] }}>
+        <div className={`card-center-symbol ${small ? 'card-center-symbol-sm' : ''}`} style={{ color: colorMap[card.color!] }}>
           &#8856;
         </div>
       )
     case 'reverse':
       return (
-        <div className={`card-center-symbol ${symbolSize}`} style={{ color: colorMap[card.color!] }}>
+        <div className={`card-center-symbol ${small ? 'card-center-symbol-sm' : ''}`} style={{ color: colorMap[card.color!] }}>
           &#10226;
         </div>
       )
     case 'draw2':
       return (
-        <div className={`card-center ${numberSize}`} style={{ color: colorMap[card.color!] }}>
+        <div className={`card-center ${small ? 'card-center-sm' : ''}`} style={{ color: colorMap[card.color!] }}>
           +2
         </div>
       )
     case 'wild':
       return (
-        <div className={`relative ${small ? 'w-10 h-10' : 'w-14 h-14'}`}>
+        <div className={`relative ${small ? 'w-8 h-8 sm:w-10 sm:h-10' : 'w-10 h-10 sm:w-14 sm:h-14'}`}>
           <svg viewBox="0 0 56 56" className="w-full h-full">
             <defs>
               <clipPath id={`wild-clip-${card.id}`}>
@@ -119,7 +117,7 @@ function CenterContent({ card, small }: { card: CardType; small?: boolean }) {
       )
     case 'wild4':
       return (
-        <div className={`relative ${small ? 'w-10 h-10' : 'w-14 h-14'}`}>
+        <div className={`relative ${small ? 'w-8 h-8 sm:w-10 sm:h-10' : 'w-10 h-10 sm:w-14 sm:h-14'}`}>
           <svg viewBox="0 0 56 56" className="w-full h-full">
             <defs>
               <clipPath id={`wild4-clip-${card.id}`}>
@@ -136,7 +134,7 @@ function CenterContent({ card, small }: { card: CardType; small?: boolean }) {
           </svg>
           <div
             className="absolute inset-0 flex items-center justify-center font-bold text-white"
-            style={{ fontSize: small ? '12px' : '16px', textShadow: '1px 1px 2px #000' }}
+            style={{ fontSize: small ? 'clamp(8px, 1vw, 12px)' : 'clamp(10px, 1.3vw, 16px)', textShadow: '1px 1px 2px #000' }}
           >
             +4
           </div>
@@ -153,14 +151,14 @@ export default function Card({ card, playable, onClick, small }: CardProps) {
   const bgColor = isWild ? '#333' : '#fff'
   const textColor = isWild ? 'text-white' : ''
 
-  const sizeClass = small ? 'w-[60px] h-[90px]' : ''
+  const sizeClass = small ? 'uno-card-small' : ''
   const playableClass = playable ? 'playable' : 'not-playable'
 
   return (
     <div
       className={`uno-card ${playableClass} ${sizeClass} ${textColor} bg-white flex-shrink-0`}
       style={{
-        border: `4px solid ${borderColor}`,
+        border: `${small ? 2 : 4}px solid ${borderColor}`,
         backgroundColor: bgColor,
       }}
       onClick={onClick}

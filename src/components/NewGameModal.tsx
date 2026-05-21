@@ -34,13 +34,13 @@ export default function NewGameModal({ visible, onStart, onCancel }: NewGameModa
       }`}
     >
       <div
-        className={`flex flex-col items-center gap-5 p-6 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl min-w-[360px] max-w-[420px] max-h-[80vh] overflow-y-auto transition-all duration-300 ${
+        className={`flex flex-col items-center gap-5 p-6 rounded-2xl bg-gray-900/95 border border-white/10 shadow-2xl min-w-[280px] sm:min-w-[360px] max-w-[90vw] sm:max-w-[420px] max-h-[85vh] overflow-y-auto transition-all duration-300 ${
           animating ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
         }`}
       >
         <h2 className="text-xl font-game text-yellow-300">新游戏设置</h2>
         <SettingsPanel compact />
-        <div className="flex items-center gap-3 w-full">
+        <div className="flex items-center gap-3 sm:gap-4 w-full">
           <button
             onClick={() => navigate('/settings')}
             className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/10 text-white/70 font-game text-sm hover:bg-white/20 transition-all"

@@ -6,6 +6,15 @@ import { shuffleDeck, drawCards, getCardScore, ensureNotEmpty } from '@/utils/de
 
 import type { Card } from '@/utils/types'
 
+function formatCardInfo(card: Card): string {
+  const colorMap: Record<string, string> = { red: '红色', yellow: '黄色', blue: '蓝色', green: '绿色' }
+  const typeMap: Record<string, string> = { number: '', skip: '跳过', reverse: '反转', draw2: '+2', wild: '万能', wild4: '万能+4' }
+  const colorStr = card.color ? (colorMap[card.color] ?? '') : ''
+  const typeStr = typeMap[card.type] ?? ''
+  if (card.type === 'number') return `${colorStr} ${card.value}`
+  return `${colorStr} ${typeStr}`.trim()
+}
+
 export function useGameEngine() {
   const currentPlayerIndex = useGameStore((s) => s.currentPlayerIndex)
   const currentColor = useGameStore((s) => s.currentColor)
@@ -13,12 +22,14 @@ export function useGameEngine() {
   const pendingDrawCount = useGameStore((s) => s.pendingDrawCount)
   const discardPileLength = useGameStore((s) => s.discardPile.length)
   const aiHandLengths = useGameStore((s) => s.players.map((p) => p.hand.length).join(','))
+  const drawAnimating = useGameStore((s) => s.drawAnimating)
 
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const processingRef = useRef(false)
 
   useEffect(() => {
     if (phase !== 'playing') return
+    if (drawAnimating) return
     if (currentPlayerIndex === 0) return
 
     const currentState = useGameStore.getState()
@@ -84,6 +95,8 @@ export function useGameEngine() {
           }
           useGameStore.setState(allUpdates)
 
+          useGameStore.getState().addLogEntry({ event: 'play', playerName: aiPlayer.name, cardInfo: formatCardInfo(stackCard) })
+
           useGameStore.getState().advanceTurn(1)
           processingRef.current = false
           return
@@ -104,11 +117,17 @@ export function useGameEngine() {
             drawPile: remaining,
             discardPile: discP,
             pendingDrawCount: 0,
+            drawAnimating: true,
+            lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
+            pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 },
           })
+          useGameStore.getState().addLogEntry({ event: 'draw', playerName: aiPlayer.name, extra: `${actual}张` })
         } else {
           useGameStore.setState({ pendingDrawCount: 0 })
+          useGameStore.getState().advanceTurn(1)
+          processingRef.current = false
+          return
         }
-        useGameStore.getState().advanceTurn(1)
         processingRef.current = false
         return
       }
@@ -271,6 +290,7 @@ export function useGameEngine() {
             phase: 'round-over',
             scores: newScores,
           })
+          useGameStore.getState().addLogEntry({ event: 'round-over', playerName: '系统', extra: `${aiPlayer.name} 获胜` })
           processingRef.current = false
           return
         }
@@ -289,6 +309,10 @@ export function useGameEngine() {
             allUpdates.lastActionEffect = { ...effectType, timestamp: Date.now() }
           }
           useGameStore.setState(allUpdates)
+
+          useGameStore.getState().addLogEntry({ event: 'play', playerName: aiPlayer.name, cardInfo: formatCardInfo(card) })
+          const colorNameMap: Record<string, string> = { red: '红色', yellow: '黄色', blue: '蓝色', green: '绿色' }
+          useGameStore.getState().addLogEntry({ event: 'color-pick', playerName: aiPlayer.name, extra: `选择了 ${colorNameMap[chosenColor] ?? chosenColor}` })
 
           if (card.type === 'wild4') {
             useGameStore.setState({ pendingDrawCount: (state.pendingDrawCount || 0) + 4 })
@@ -333,6 +357,11 @@ export function useGameEngine() {
         }
 
         useGameStore.setState(allUpdates)
+
+        useGameStore.getState().addLogEntry({ event: 'play', playerName: aiPlayer.name, cardInfo: formatCardInfo(card) })
+        if (card.type === 'reverse') {
+          useGameStore.getState().addLogEntry({ event: 'reverse', playerName: aiPlayer.name, cardInfo: formatCardInfo(card), extra: '方向反转' })
+        }
 
         if (effect.reverse && newPlayers.length === 2 && cfg.actionCards.reverseAsSkip) {
           useGameStore.getState().advanceTurn(2)
@@ -398,7 +427,10 @@ export function useGameEngine() {
           drawPile: cDrawPile,
           discardPile: cDiscard,
           cardJustDrawn: newH.length > aiPlayer.hand.length ? newH[newH.length - 1] : null,
+          drawAnimating: true,
+          lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: newH.length - aiPlayer.hand.length, timestamp: Date.now() },
         })
+        useGameStore.getState().addLogEntry({ event: 'draw', playerName: aiPlayer.name, extra: `${newH.length - aiPlayer.hand.length}张` })
 
         if (foundPlayable && cfg.draw.forcePlay && lastPlayableCard) {
           // Card is in hand, AI will pick it up on next tick via findBestCard
@@ -406,7 +438,7 @@ export function useGameEngine() {
           return
         }
 
-        useGameStore.getState().advanceTurn(1)
+        useGameStore.setState({ pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 } })
       } else {
         const reshuffled0 = ensureNotEmpty(cDrawPile, cDiscard)
         cDrawPile = reshuffled0.drawPile
@@ -426,7 +458,10 @@ export function useGameEngine() {
             drawPile: cDrawPile,
             discardPile: cDiscard,
             cardJustDrawn: drawn[drawn.length - 1],
+            drawAnimating: true,
+            lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
           })
+          useGameStore.getState().addLogEntry({ event: 'draw', playerName: aiPlayer.name, extra: `${drawn.length}张` })
 
           const topForCheck = cDiscard[cDiscard.length - 1]
           const lastDrawn = drawn[drawn.length - 1]
@@ -436,7 +471,7 @@ export function useGameEngine() {
           }
         }
 
-        useGameStore.getState().advanceTurn(1)
+        useGameStore.setState({ pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 } })
       }
 
       processingRef.current = false
@@ -446,5 +481,5 @@ export function useGameEngine() {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
       processingRef.current = false
     }
-  }, [currentPlayerIndex, phase, discardPileLength, pendingDrawCount, aiHandLengths, currentColor])
+  }, [currentPlayerIndex, phase, discardPileLength, pendingDrawCount, aiHandLengths, currentColor, drawAnimating])
 }

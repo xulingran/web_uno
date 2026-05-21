@@ -1,9 +1,11 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Settings } from 'lucide-react'
+import { Settings, Bug } from 'lucide-react'
 import { useGameStore } from '@/store/gameStore'
 import { canPlayCard, canStack, canJumpIn } from '@/utils/rules'
 import { distributeAIPlayers } from '@/utils/layout'
+import { useDealAnimation } from '@/hooks/useDealAnimation'
+import { useDrawAnimation } from '@/hooks/useDrawAnimation'
 import PlayerHand from './PlayerHand'
 import AIHand from './AIHand'
 import DiscardPile from './DiscardPile'
@@ -15,6 +17,8 @@ import Scoreboard from './Scoreboard'
 import NewGameModal from './NewGameModal'
 import UNOModal from './UNOModal'
 import ChallengeModal from './ChallengeModal'
+import DealAnimator from './DealAnimator'
+import DebugPanel from './DebugPanel'
 
 const actionLabels: Record<string, string> = {
   draw2: '+2!',
@@ -48,7 +52,11 @@ export default function GameBoard() {
   const turnStartTime = useGameStore((s) => s.turnStartTime)
   const lastPlayedBy = useGameStore((s) => s.lastPlayedBy)
   const lastActionEffect = useGameStore((s) => s.lastActionEffect)
-  const lastDrawEvent = useGameStore((s) => s.lastDrawEvent)
+  const debugMode = useGameStore((s) => s.debugMode)
+  const logEntries = useGameStore((s) => s.logEntries)
+  const toggleDebugMode = useGameStore((s) => s.toggleDebugMode)
+  const dealAnimConfig = useGameStore((s) => s.dealAnimConfig)
+  const drawAnimating = useGameStore((s) => s.drawAnimating)
 
   const playCard = useGameStore((s) => s.playCard)
   const drawCard = useGameStore((s) => s.drawCard)
@@ -66,6 +74,9 @@ export default function GameBoard() {
   const [actionOverlay, setActionOverlay] = useState<{ type: string; color?: string } | null>(null)
   const [discardBounce, setDiscardBounce] = useState(false)
 
+  const { currentDealItem, isDealing, onDealAnimationComplete } = useDealAnimation()
+  const { currentDrawItem, onDrawAnimationComplete } = useDrawAnimation()
+
   const aiRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const discardPileRef = useRef<HTMLDivElement>(null)
   const drawPileRef = useRef<HTMLDivElement>(null)
@@ -79,6 +90,8 @@ export default function GameBoard() {
   const topCard = discardPile.length > 0 ? discardPile[discardPile.length - 1] : null
 
   const playableCards = useMemo(() => {
+    if (isDealing) return new Set<string>()
+    if (drawAnimating) return new Set<string>()
     if (!humanPlayer || !topCard || !isHumanTurn) return new Set<string>()
     if (pendingDrawCount > 0) return new Set<string>()
 
@@ -94,9 +107,11 @@ export default function GameBoard() {
     }
 
     return playable
-  }, [humanPlayer, topCard, currentColor, isHumanTurn, cardJustDrawn, pendingDrawCount])
+  }, [humanPlayer, topCard, currentColor, isHumanTurn, cardJustDrawn, pendingDrawCount, isDealing, drawAnimating])
 
   const stackableCards = useMemo(() => {
+    if (isDealing) return new Set<string>()
+    if (drawAnimating) return new Set<string>()
     if (!humanPlayer || !topCard || pendingDrawCount <= 0) return new Set<string>()
     if (!config.actionCards.stackingDraw2 && !config.actionCards.stackingDraw4) return new Set<string>()
     const stackable = new Set<string>()
@@ -107,9 +122,11 @@ export default function GameBoard() {
       }
     }
     return stackable
-  }, [humanPlayer, topCard, pendingDrawCount, config, currentColor])
+  }, [humanPlayer, topCard, pendingDrawCount, config, currentColor, isDealing, drawAnimating])
 
   const jumpInCards = useMemo(() => {
+    if (isDealing) return new Set<string>()
+    if (drawAnimating) return new Set<string>()
     if (!humanPlayer || !topCard || !config.actionCards.jumpIn) return new Set<string>()
     if (isHumanTurn) return new Set<string>()
     const jumpable = new Set<string>()
@@ -119,10 +136,10 @@ export default function GameBoard() {
       }
     }
     return jumpable
-  }, [humanPlayer, topCard, currentColor, config, isHumanTurn])
+  }, [humanPlayer, topCard, currentColor, config, isHumanTurn, isDealing, drawAnimating])
 
   const hasPlayableCards = playableCards.size > 0
-  const canDraw = isHumanTurn && phase === 'playing' && !hasPlayableCards
+  const canDraw = isHumanTurn && phase === 'playing' && !isDealing && !drawAnimating && !hasPlayableCards
 
   const showUNO = humanPlayer ? humanPlayer.hand.length === 1 : false
 
@@ -227,76 +244,6 @@ export default function GameBoard() {
     }
   }, [discardBounce])
 
-  // Draw card animation
-  useEffect(() => {
-    if (!lastDrawEvent) return
-
-    const sourceEl = drawPileRef.current
-    if (!sourceEl) return
-
-    let targetEl: HTMLElement | null = null
-
-    if (lastDrawEvent.playerIndex === 0) {
-      targetEl = playerHandRef.current
-    } else {
-      targetEl = aiRefs.current.get(lastDrawEvent.playerIndex) ?? null
-    }
-
-    if (!targetEl) return
-
-    const sourceRect = sourceEl.getBoundingClientRect()
-    const targetRect = targetEl.getBoundingClientRect()
-    const cardCount = lastDrawEvent.cardCount
-
-    const timers: ReturnType<typeof setTimeout>[] = []
-
-    for (let i = 0; i < cardCount; i++) {
-      const delay = i * 100
-
-      const timer = setTimeout(() => {
-        const flyEl = document.createElement('div')
-        const startX = sourceRect.left + sourceRect.width / 2 - 45
-        const startY = sourceRect.top + sourceRect.height / 2 - 67
-        const endX = targetRect.left + targetRect.width / 2 - 45 + (Math.random() - 0.5) * 20
-        const endY = targetRect.top + targetRect.height / 2 - 67 + (Math.random() - 0.5) * 16
-
-        flyEl.style.position = 'fixed'
-        flyEl.style.left = `${startX}px`
-        flyEl.style.top = `${startY}px`
-        flyEl.style.width = '90px'
-        flyEl.style.height = '135px'
-        flyEl.style.borderRadius = '10px'
-        flyEl.style.background = 'linear-gradient(135deg, #c62828 0%, #d32f2f 50%, #b71c1c 100%)'
-        flyEl.style.border = '3px solid #ffcc00'
-        flyEl.style.zIndex = '9999'
-        flyEl.style.pointerEvents = 'none'
-        flyEl.style.transition = 'all 500ms cubic-bezier(0.25, 0.46, 0.45, 0.94)'
-        flyEl.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)'
-        flyEl.style.opacity = '0.8'
-        flyEl.style.transform = `rotate(${(Math.random() - 0.5) * 10}deg) scale(0.6)`
-        document.body.appendChild(flyEl)
-
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            flyEl.style.left = `${endX}px`
-            flyEl.style.top = `${endY}px`
-            flyEl.style.opacity = '1'
-            flyEl.style.transform = 'rotate(0deg) scale(0.85)'
-          })
-        })
-
-        const removeTimer = setTimeout(() => flyEl.remove(), 550)
-        timers.push(removeTimer)
-      }, delay)
-
-      timers.push(timer)
-    }
-
-    return () => {
-      for (const t of timers) clearTimeout(t)
-    }
-  }, [lastDrawEvent])
-
   // Action effect overlay
   useEffect(() => {
     if (!lastActionEffect) return
@@ -358,9 +305,9 @@ export default function GameBoard() {
   const topPlayers = distribution.top.map((idx) => players[idx]).filter(Boolean)
 
   return (
-    <div className="w-full h-full flex flex-col bg-uno-dark relative overflow-hidden">
-      {/* Top: GameInfo */}
-      <div className="flex justify-center pt-3 pb-1 relative">
+    <div className="game-board w-full h-full bg-uno-dark relative overflow-hidden">
+      {/* Row 1: GameInfo */}
+      <div className="flex justify-center pt-3 pb-1 relative" style={{ gridColumn: '1 / -1', gridRow: '1' }}>
         <GameInfo
           direction={direction}
           currentColor={currentColor}
@@ -373,18 +320,25 @@ export default function GameBoard() {
         >
           <Settings size={22} />
         </button>
+        <button
+          onClick={toggleDebugMode}
+          className={`absolute right-12 top-1/2 -translate-y-1/2 transition-colors ${debugMode ? 'text-green-400' : 'text-white/40 hover:text-white/80'}`}
+          title="调试模式"
+        >
+          <Bug size={20} />
+        </button>
       </div>
 
-      {/* Turn timer */}
+      {/* Row 2: Turn timer (conditional) */}
       {turnTimeLeft > 0 && currentPlayerIndex === 0 && (
-        <div className="text-center text-white/50 text-sm">
+        <div className="text-center text-white/50 text-sm" style={{ gridColumn: '1 / -1', gridRow: '2' }}>
           ⏱ {Math.ceil(turnTimeLeft / 1000)}s
         </div>
       )}
 
-      {/* Top AI row */}
+      {/* Row 2/3: Top AI row */}
       {topPlayers.length > 0 && (
-        <div className="flex justify-center gap-6 py-2 px-4">
+        <div className="flex justify-center gap-3 sm:gap-6 py-2 px-4" style={{ gridColumn: '1 / -1', gridRow: '2' }}>
           {topPlayers.map((p) => {
             const idx = players.indexOf(p)
             return (
@@ -404,90 +358,86 @@ export default function GameBoard() {
         </div>
       )}
 
-      {/* Middle row: Left AI | Center piles | Right AI */}
-      <div className="flex-1 flex items-stretch min-h-0">
-        {/* Left AI */}
-        <div className={`flex items-center justify-center ${leftPlayer ? 'w-28' : 'w-4'} flex-shrink-0`}>
-          {leftPlayer && (() => {
-            const idx = distribution.left!
-            return (
-              <div
-                ref={(el) => setAIRef(idx, el)}
-                className={turnTransition === idx ? 'animate-turn-indicator' : ''}
-              >
-                <AIHand
-                  player={leftPlayer}
-                  isCurrentTurn={currentPlayerIndex === idx}
-                  position="left"
-                />
-              </div>
-            )
-          })()}
-        </div>
-
-        {/* Center: Draw pile + Discard pile */}
-        <div className="flex-1 flex items-center justify-center relative">
-          <div className="flex items-center gap-12">
-            <DrawPile
-              ref={drawPileRef}
-              count={drawPile.length}
-              onDraw={drawCard}
-              canDraw={canDraw && pendingDrawCount <= 0}
-            />
-            <div ref={discardPileRef} className={discardBounce ? 'animate-bounce-in' : ''}>
-              <DiscardPile
-                topCard={topCard}
-                currentColor={currentColor}
-              />
-            </div>
-          </div>
-
-          {/* Action effect flash overlay */}
-          {actionOverlay && (
+      {/* Row 3: Left AI */}
+      <div className={`flex items-center justify-center ${leftPlayer ? 'p-2' : ''}`} style={{ gridRow: '3', alignSelf: 'center' }}>
+        {leftPlayer && (() => {
+          const idx = distribution.left!
+          return (
             <div
-              className="absolute inset-0 pointer-events-none flex items-center justify-center"
-              style={{ zIndex: 50 }}
+              ref={(el) => setAIRef(idx, el)}
+              className={turnTransition === idx ? 'animate-turn-indicator' : ''}
             >
-              <div
-                className="absolute inset-0 animate-action-flash"
-                style={{ backgroundColor: actionOverlay.color ?? actionColors[actionOverlay.type] ?? '#E53935', opacity: 0.3 }}
+              <AIHand
+                player={leftPlayer}
+                isCurrentTurn={currentPlayerIndex === idx}
+                position="left"
               />
-              <div
-                className="relative font-game text-5xl text-white animate-action-text"
-                style={{
-                  textShadow: '3px 3px 0 #000, 6px 6px 0 rgba(0,0,0,0.3)',
-                  zIndex: 51,
-                }}
-              >
-                {actionLabels[actionOverlay.type] ?? ''}
-              </div>
             </div>
-          )}
-        </div>
-
-        {/* Right AI */}
-        <div className={`flex items-center justify-center ${rightPlayer ? 'w-28' : 'w-4'} flex-shrink-0`}>
-          {rightPlayer && (() => {
-            const idx = distribution.right!
-            return (
-              <div
-                ref={(el) => setAIRef(idx, el)}
-                className={turnTransition === idx ? 'animate-turn-indicator' : ''}
-              >
-                <AIHand
-                  player={rightPlayer}
-                  isCurrentTurn={currentPlayerIndex === idx}
-                  position="right"
-                />
-              </div>
-            )
-          })()}
-        </div>
+          )
+        })()}
       </div>
 
-      {/* Pending draw button */}
+      {/* Row 3: Center piles - center in Row 3 */}
+      <div className="flex items-center justify-center relative" style={{ gridRow: '3', placeSelf: 'center', zIndex: 1 }}>
+        <div className="flex items-center gap-6 sm:gap-12">
+          <DrawPile
+            ref={drawPileRef}
+            count={drawPile.length}
+            onDraw={drawCard}
+            canDraw={canDraw && pendingDrawCount <= 0}
+          />
+          <div ref={discardPileRef} className={discardBounce ? 'animate-bounce-in' : ''}>
+            <DiscardPile
+              topCard={topCard}
+              currentColor={currentColor}
+            />
+          </div>
+        </div>
+
+        {actionOverlay && (
+          <div
+            className="absolute inset-0 pointer-events-none flex items-center justify-center"
+            style={{ zIndex: 50 }}
+          >
+            <div
+              className="absolute inset-0 animate-action-flash"
+              style={{ backgroundColor: actionOverlay.color ?? actionColors[actionOverlay.type] ?? '#E53935', opacity: 0.3 }}
+            />
+            <div
+              className="relative font-game text-5xl text-white animate-action-text"
+              style={{
+                textShadow: '3px 3px 0 #000, 6px 6px 0 rgba(0,0,0,0.3)',
+                zIndex: 51,
+              }}
+            >
+              {actionLabels[actionOverlay.type] ?? ''}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Row 3: Right AI */}
+      <div className={`flex items-center justify-center ${rightPlayer ? 'p-2' : ''}`} style={{ gridRow: '3', alignSelf: 'center' }}>
+        {rightPlayer && (() => {
+          const idx = distribution.right!
+          return (
+            <div
+              ref={(el) => setAIRef(idx, el)}
+              className={turnTransition === idx ? 'animate-turn-indicator' : ''}
+            >
+              <AIHand
+                player={rightPlayer}
+                isCurrentTurn={currentPlayerIndex === idx}
+                position="right"
+              />
+            </div>
+          )
+        })()}
+      </div>
+
+      {/* Row 4: Pending draw button (conditional) */}
       {pendingDrawCount > 0 && isHumanTurn && (
-        <div className="flex justify-center pb-2">
+        <div className="flex justify-center pb-2" style={{ gridColumn: '1 / -1', gridRow: '4' }}>
           <button
             onClick={() => acceptDraw()}
             className="px-4 py-2 rounded-lg bg-red-500/20 text-red-300 font-game text-sm hover:bg-red-500/30 transition-all"
@@ -497,9 +447,9 @@ export default function GameBoard() {
         </div>
       )}
 
-      {/* Skip after draw button */}
+      {/* Row 4: Skip after draw button (conditional) */}
       {cardJustDrawn && !config.draw.forcePlay && isHumanTurn && (
-        <div className="flex justify-center pb-2">
+        <div className="flex justify-center pb-2" style={{ gridColumn: '1 / -1', gridRow: '4' }}>
           <button
             onClick={() => advanceTurn(1)}
             className="px-4 py-2 rounded-lg bg-white/10 text-white/60 font-game text-sm hover:bg-white/20 hover:text-white/90 transition-all"
@@ -509,8 +459,8 @@ export default function GameBoard() {
         </div>
       )}
 
-      {/* Bottom: Human hand */}
-      <div className="flex justify-center pb-6 px-4">
+      {/* Row 4: Bottom: Human hand */}
+      <div className={`flex justify-center pb-4 sm:pb-6 px-2 sm:px-4 ${isDealing ? 'pointer-events-none opacity-50' : ''}`} style={{ gridColumn: '1 / -1', gridRow: '4', alignSelf: 'end' }}>
         {humanPlayer && (
           <PlayerHand
             ref={playerHandRef}
@@ -567,6 +517,30 @@ export default function GameBoard() {
           startNewGame()
         }}
         onCancel={() => setShowNewGameModal(false)}
+      />
+
+      <DealAnimator
+        dealItem={currentDealItem}
+        sourceRef={drawPileRef}
+        targetRefs={(() => { const m = new Map(aiRefs.current); if (playerHandRef.current) m.set(0, playerHandRef.current); return m })()}
+        duration={dealAnimConfig.singleCardDuration}
+        easing={dealAnimConfig.easing}
+        onComplete={onDealAnimationComplete}
+      />
+
+      <DealAnimator
+        dealItem={currentDrawItem}
+        sourceRef={drawPileRef}
+        targetRefs={(() => { const m = new Map(aiRefs.current); if (playerHandRef.current) m.set(0, playerHandRef.current); return m })()}
+        duration={dealAnimConfig.singleCardDuration}
+        easing={dealAnimConfig.easing}
+        onComplete={onDrawAnimationComplete}
+      />
+
+      <DebugPanel
+        visible={debugMode}
+        logEntries={logEntries}
+        onClose={toggleDebugMode}
       />
     </div>
   )

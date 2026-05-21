@@ -63,7 +63,7 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
   }
 
   const renderToggle = (label: string, group: keyof GameConfig, field: string) => (
-    <label className="flex items-center justify-between py-2 px-1 hover:bg-white/5 rounded cursor-pointer">
+    <label className="flex items-center justify-between py-2.5 px-1 hover:bg-white/5 rounded cursor-pointer">
       <span className="text-white/80 text-sm">{label}</span>
       <input
         type="checkbox"
@@ -75,7 +75,7 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
   )
 
   const renderNumber = (label: string, group: keyof GameConfig, field: string, min = 0, max = 99) => (
-    <div className="flex items-center justify-between py-2 px-1">
+    <div className="flex items-center justify-between py-2.5 px-1">
       <span className="text-white/80 text-sm">{label}</span>
       <div className="flex items-center gap-2">
         <button
@@ -166,7 +166,7 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
   }
 
   return (
-    <div className="flex flex-col gap-4 max-w-lg mx-auto">
+    <div className="flex flex-col gap-5 sm:gap-6 max-w-lg sm:max-w-xl lg:max-w-2xl mx-auto">
       <div className="flex flex-col gap-2">
         <h3 className="font-game text-white text-lg">预设</h3>
         <div className="flex gap-2 flex-wrap">
@@ -194,10 +194,10 @@ export default function SettingsPanel({ compact, onStartGame }: SettingsPanelPro
       </div>
 
       {GROUPS.map((group) => (
-        <div key={group.key} className="border border-white/10 rounded-xl overflow-hidden">
+        <div key={group.key} className="border border-white/15 rounded-xl overflow-hidden">
           <button
             onClick={() => toggleGroup(group.key)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 transition-colors"
+            className="w-full flex items-center justify-between px-4 py-3.5 bg-white/5 hover:bg-white/10 transition-colors"
           >
             <span className="font-game text-white text-sm">{group.label}</span>
             {openGroups.has(group.key) ? (

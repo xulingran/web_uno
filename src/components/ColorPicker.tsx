@@ -37,17 +37,17 @@ export default function ColorPicker({ visible, onPickColor }: ColorPickerProps) 
       }`}
     >
       <div
-        className={`flex flex-col items-center gap-6 p-8 rounded-2xl bg-gray-900/90 border border-white/10 shadow-2xl transition-all duration-300 ${
+        className={`flex flex-col items-center gap-6 p-5 sm:p-8 rounded-2xl bg-gray-900/90 border border-white/10 shadow-2xl transition-all duration-300 ${
           animating ? 'scale-100 opacity-100' : 'scale-90 opacity-0'
         }`}
       >
         <h2 className="text-2xl font-game text-white">选择颜色</h2>
-        <div className="flex gap-5">
+        <div className="flex gap-4 sm:gap-5">
           {colors.map(({ color, hex, name, ring }) => (
             <button
               key={color}
               onClick={() => onPickColor(color)}
-              className={`w-[72px] h-[72px] rounded-full font-game text-lg shadow-lg transition-all duration-200 hover:scale-110 hover:ring-4 ${ring} active:scale-95`}
+              className={`w-16 h-16 sm:w-[72px] sm:h-[72px] rounded-full font-game text-lg shadow-lg transition-all duration-200 hover:scale-110 hover:ring-4 ${ring} active:scale-95`}
               style={{
                 backgroundColor: hex,
                 color: color === 'yellow' ? '#000' : '#fff',
