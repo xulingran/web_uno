@@ -1,0 +1,44 @@
+- generic [ref=e3]:
+  - generic [ref=e4]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - generic [ref=e8]: ↻
+        - generic [ref=e9]: 顺时针
+      - generic [ref=e13]: "当前色: 红"
+      - generic [ref=e15]: "当前回合: 你"
+    - button "设置" [ref=e16] [cursor=pointer]:
+      - img [ref=e17]
+  - generic [ref=e20]:
+    - generic [ref=e24]:
+      - generic [ref=e25]: 电脑A · 2张
+      - generic [ref=e26]:
+        - generic [ref=e30]: UNO
+        - generic [ref=e84]: UNO
+    - generic [ref=e36]:
+      - generic [ref=e37]:
+        - generic [ref=e38] [cursor=pointer]:
+          - generic [ref=e40]:
+            - generic [ref=e42]: UNO
+            - generic [ref=e43]: "16"
+          - generic [ref=e47]: UNO
+          - generic [ref=e51]: UNO
+        - generic [ref=e52] [cursor=pointer]: 点击抽牌
+      - generic [ref=e54]:
+        - generic [ref=e56]:
+          - generic [ref=e57]: "+2"
+          - generic [ref=e58]: "+2"
+          - generic [ref=e59]: "+2"
+        - generic [ref=e62]: 红
+    - generic [ref=e66]:
+      - generic [ref=e67]: 电脑B · 4张
+      - generic [ref=e68]:
+        - generic [ref=e72]: UNO
+        - generic [ref=e88]: UNO
+        - generic [ref=e92]: UNO
+        - generic [ref=e96]: UNO
+  - generic [ref=e74]:
+    - generic [ref=e97]: 轮到你了！
+    - generic [ref=e77]:
+      - generic [ref=e78]: "1"
+      - generic [ref=e79]: "1"
+      - generic [ref=e80]: "1"
