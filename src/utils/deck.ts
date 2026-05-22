@@ -1,0 +1,118 @@
+import type { Card, CardColor } from './types'
+import type { GameConfig } from '@/config/types'
+
+const COLORS: CardColor[] = ['red', 'yellow', 'blue', 'green'];
+
+export function createDeck(): Card[] {
+  const cards: Card[] = [];
+
+  for (const color of COLORS) {
+    cards.push({ id: `${color}-0`, color, type: 'number', value: 0 });
+
+    for (let i = 1; i <= 9; i++) {
+      cards.push({ id: `${color}-${i}-0`, color, type: 'number', value: i });
+      cards.push({ id: `${color}-${i}-1`, color, type: 'number', value: i });
+    }
+
+    for (let i = 0; i < 2; i++) {
+      cards.push({ id: `${color}-skip-${i}`, color, type: 'skip' });
+      cards.push({ id: `${color}-reverse-${i}`, color, type: 'reverse' });
+      cards.push({ id: `${color}-draw2-${i}`, color, type: 'draw2' });
+    }
+  }
+
+  for (let i = 0; i < 4; i++) {
+    cards.push({ id: `wild-${i}`, color: null, type: 'wild' });
+  }
+
+  for (let i = 0; i < 4; i++) {
+    cards.push({ id: `wild4-${i}`, color: null, type: 'wild4' });
+  }
+
+  return cards;
+}
+
+export function shuffleDeck(deck: Card[]): Card[] {
+  const result = [...deck];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+export function dealCards(
+  deck: Card[],
+  numPlayers: number,
+  cardsPerPlayer: number
+): { players: Card[][]; remaining: Card[] } {
+  const remaining = [...deck];
+  const playersCards: Card[][] = [];
+
+  for (let i = 0; i < numPlayers; i++) {
+    playersCards.push(remaining.splice(0, cardsPerPlayer));
+  }
+
+  return { players: playersCards, remaining };
+}
+
+export function drawCards(
+  pile: Card[],
+  count: number
+): { drawn: Card[]; remaining: Card[] } {
+  const remaining = [...pile];
+  const drawn = remaining.splice(0, count);
+  return { drawn, remaining };
+}
+
+export function ensureNotEmpty(pile: Card[], discardPile: Card[]): { drawPile: Card[]; discardPile: Card[] } {
+  if (pile.length > 0) return { drawPile: pile, discardPile }
+  if (discardPile.length <= 1) return { drawPile: pile, discardPile }
+  const topCard = discardPile[discardPile.length - 1]
+  const rest = discardPile.slice(0, -1)
+  const shuffled = shuffleDeck(rest)
+  return { drawPile: shuffled, discardPile: [topCard] }
+}
+
+export function getCardScore(card: Card, config?: GameConfig): number {
+  if (card.type === 'number') {
+    if (config && config.scoring.numberCard > 0) {
+      return config.scoring.numberCard
+    }
+    return card.value ?? 0
+  }
+  if (card.type === 'wild' || card.type === 'wild4') {
+    return config?.scoring.wildCard ?? 50
+  }
+  return config?.scoring.actionCard ?? 20
+}
+
+export function applyDrawToPlayer(
+  drawPile: Card[],
+  discardPile: Card[],
+  drawCount: number
+): { drawn: Card[]; drawPile: Card[]; discardPile: Card[] } {
+  let curDrawPile = [...drawPile]
+  let curDiscardPile = [...discardPile]
+  const allDrawn: Card[] = []
+
+  const reshuffled = ensureNotEmpty(curDrawPile, curDiscardPile)
+  curDrawPile = reshuffled.drawPile
+  curDiscardPile = reshuffled.discardPile
+
+  let remaining = drawCount
+  while (remaining > 0 && curDrawPile.length > 0) {
+    const actual = Math.min(remaining, curDrawPile.length)
+    const { drawn, remaining: newPile } = drawCards(curDrawPile, actual)
+    allDrawn.push(...drawn)
+    curDrawPile = newPile
+    remaining -= actual
+    if (remaining > 0) {
+      const reshuffled2 = ensureNotEmpty(curDrawPile, curDiscardPile)
+      curDrawPile = reshuffled2.drawPile
+      curDiscardPile = reshuffled2.discardPile
+    }
+  }
+
+  return { drawn: allDrawn, drawPile: curDrawPile, discardPile: curDiscardPile }
+}

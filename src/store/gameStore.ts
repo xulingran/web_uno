@@ -1,0 +1,1042 @@
+import { create } from 'zustand'
+import type { Card, CardColor, Direction, GamePhase, Player, DealItem, DealAnimConfig, GameLogEntry, DrawResolution } from '@/utils/types'
+import type { GameConfig } from '@/config/types'
+import { useConfigStore } from './configStore'
+import { createDeck, shuffleDeck, dealCards, getCardScore, ensureNotEmpty, applyDrawToPlayer } from '@/utils/deck'
+import { canPlayCard, canStack, canJumpIn, getNextPlayerIndex, getActionEffect, getCardActionEffectType, applySevenORule, checkWild4Violation, type ActionEffect } from '@/utils/rules'
+import { shouldChallengeWild4 } from '@/utils/ai'
+import { formatCardInfo } from '@/utils/display'
+
+const DEFAULT_DEAL_ANIM_CONFIG: DealAnimConfig = {
+  singleCardDuration: 200,
+  cardInterval: 100,
+  timeout: 5000,
+  easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+}
+
+const LOG_MAX_ENTRIES = 500
+
+interface GameActions {
+  initGame: () => void
+  playCard: (cardId: string) => void
+  drawCard: () => void
+  pickColor: (color: CardColor) => void
+  advanceTurn: (skipCount?: number) => void
+  startNewGame: () => void
+  acceptDraw: () => void
+  resolveUno: (confirmed: boolean) => void
+  resolveChallenge: (challenge: boolean) => void
+  addDealtCard: (index: number) => void
+  completeDealing: () => void
+  toggleDebugMode: () => void
+  addLogEntry: (entry: Omit<GameLogEntry, 'timestamp'>) => void
+  clearLogs: () => void
+  completeDrawAnimation: () => void
+  cancelColorPick: () => void
+}
+
+interface StoreState {
+  players: Player[]
+  drawPile: Card[]
+  discardPile: Card[]
+  currentPlayerIndex: number
+  direction: Direction
+  currentColor: CardColor
+  phase: GamePhase
+  winner: Player | null
+  scores: number[]
+  cardJustDrawn: Card | null
+  pendingDrawCount: number
+  config: GameConfig
+  unoCalledPlayer: string | null
+  pendingUnoAdvance: number
+  stackingWaiting: boolean
+  challengePlayerIndex: number | null
+  turnStartTime: number | null
+  gameStartTime: number | null
+  lastPlayedBy: { playerIndex: number; cardId: string } | null
+  lastActionEffect: { type: string; color?: string; timestamp: number } | null
+  colorBeforeWild: CardColor | null
+  lastDrawEvent: { playerIndex: number; cardCount: number; timestamp: number } | null
+  dealSequence: DealItem[]
+  dealtIndex: number
+  dealAnimConfig: DealAnimConfig
+  pendingInitialTopCard: Card | null
+  debugMode: boolean
+  logEntries: GameLogEntry[]
+  drawAnimating: boolean
+  pendingDrawResolution: DrawResolution
+}
+
+function getFirstValidTopCard(
+  drawPile: Card[],
+  discardPile: Card[]
+): { drawPile: Card[]; discardPile: Card[]; topCard: Card } {
+  const pile = [...drawPile]
+  const disc = [...discardPile]
+  let card = pile.shift()!
+  const maxIterations = pile.length + disc.length + drawPile.length + 10
+  let iterations = 0
+
+  while (card.type === 'wild4' && iterations < maxIterations) {
+    iterations++
+    disc.push(card)
+    if (pile.length === 0) {
+      if (disc.length <= 1) {
+        break
+      }
+      const topCardSaved = disc[disc.length - 1]
+      const rest = disc.slice(0, -1)
+      const shuffled = shuffleDeck(rest)
+      pile.push(...shuffled)
+      disc.length = 0
+      disc.push(topCardSaved)
+    }
+    if (pile.length === 0) break
+    card = pile.shift()!
+  }
+
+  disc.push(card)
+  return { drawPile: pile, discardPile: disc, topCard: card }
+}
+
+function validateJumpIn(
+  state: StoreState,
+  cardId: string,
+  currentPlayerIndex: number
+): { isJumpIn: boolean; playingPlayerIndex: number } {
+  const humanPlayer = state.players[0]
+  if (!humanPlayer || !humanPlayer.isHuman) {
+    return { isJumpIn: false, playingPlayerIndex: currentPlayerIndex }
+  }
+
+  const topCard = state.discardPile[state.discardPile.length - 1]
+  const cardIdx = humanPlayer.hand.findIndex((c) => c.id === cardId)
+  if (cardIdx === -1) {
+    return { isJumpIn: false, playingPlayerIndex: currentPlayerIndex }
+  }
+
+  const jumpCard = humanPlayer.hand[cardIdx]
+  if (canJumpIn(jumpCard, topCard, state.currentColor)) {
+    return { isJumpIn: true, playingPlayerIndex: 0 }
+  }
+
+  return { isJumpIn: false, playingPlayerIndex: currentPlayerIndex }
+}
+
+function validateCardPlay(
+  card: Card,
+  topCard: Card,
+  state: StoreState,
+  playerHand: Card[],
+  isJumpIn: boolean
+): boolean {
+  if (state.pendingDrawCount > 0) {
+    const stackingEnabled = state.config.actionCards.stackingDraw2 || state.config.actionCards.stackingDraw4
+    if (!stackingEnabled || !canStack(card, topCard, state.config.actionCards)) {
+      return false
+    }
+    if (card.type === 'wild4') {
+      const hasMatchingColor = playerHand.some((c) => c.color === state.currentColor)
+      return !hasMatchingColor
+    }
+    return true
+  }
+
+  if (isJumpIn) {
+    return true
+  }
+
+  return canPlayCard(card, topCard, state.currentColor, playerHand)
+}
+
+function handleUnoLogic(
+  player: Player,
+  handSize: number,
+  config: GameConfig,
+  baseUpdate: Partial<StoreState>
+): { needsUnoConfirm: boolean } {
+  if (handSize === 1 && config.uno.requireUNOCall) {
+    if (player.isHuman && !config.uno.autoDetectUNO) {
+      baseUpdate.unoCalledPlayer = null
+      return { needsUnoConfirm: true }
+    } else {
+      baseUpdate.unoCalledPlayer = player.id
+      return { needsUnoConfirm: false }
+    }
+  }
+  return { needsUnoConfirm: false }
+}
+
+function checkVictory(
+  players: Player[],
+  playingPlayerIndex: number,
+  baseUpdate: Partial<StoreState>,
+  config: GameConfig,
+  currentScores: number[]
+): { hasWinner: boolean; victoryUpdate?: Partial<StoreState> } {
+  if (players[playingPlayerIndex].hand.length !== 0) {
+    return { hasWinner: false }
+  }
+
+  const newScores = [...currentScores]
+  const winnerIdx = playingPlayerIndex
+  let totalPoints = 0
+  for (let i = 0; i < players.length; i++) {
+    if (i !== winnerIdx) {
+      const points = players[i].hand.reduce((sum, c) => sum + getCardScore(c, config), 0)
+      totalPoints += points
+    }
+  }
+  newScores[winnerIdx] += totalPoints
+
+  return {
+    hasWinner: true,
+    victoryUpdate: {
+      ...baseUpdate,
+      winner: { ...players[playingPlayerIndex] },
+      phase: 'round-over' as const,
+      scores: newScores,
+    },
+  }
+}
+
+function handleTurnAdvance(
+  needsUnoConfirm: boolean,
+  skipCount: number,
+  advanceTurnFn: (skipCount?: number) => void,
+  setFn: (partial: Partial<StoreState>) => void
+): void {
+  if (needsUnoConfirm) {
+    setFn({ pendingUnoAdvance: skipCount })
+    return
+  }
+  advanceTurnFn(skipCount)
+}
+
+function applyCardEffectAndAdvanceTurn(
+  card: Card,
+  effect: ActionEffect,
+  state: StoreState,
+  baseUpdate: Partial<StoreState>,
+  playingPlayerIndex: number,
+  isJumpIn: boolean,
+  needsUnoConfirm: boolean,
+  advanceTurnFn: (skipCount?: number) => void,
+  setFn: (partial: Partial<StoreState>) => void
+): void {
+  const actionEffectType = getCardActionEffectType(card)
+  if (actionEffectType) {
+    baseUpdate.lastActionEffect = { ...actionEffectType, timestamp: Date.now() }
+  }
+  baseUpdate.lastPlayedBy = { playerIndex: playingPlayerIndex, cardId: card.id }
+
+  if (effect.needsColorPick) {
+    setFn({
+      ...baseUpdate,
+      phase: 'color-picking' as const,
+      currentPlayerIndex: playingPlayerIndex,
+      colorBeforeWild: state.currentColor,
+      ...(needsUnoConfirm ? { pendingUnoAdvance: 1 } : {}),
+    })
+    return
+  }
+
+  if (card.color != null) {
+    baseUpdate.currentColor = card.color
+  }
+
+  if (isJumpIn) {
+    baseUpdate.currentPlayerIndex = playingPlayerIndex
+  }
+
+  if (effect.reverse) {
+    const newDirection: Direction =
+      state.direction === 'clockwise' ? 'counterclockwise' : 'clockwise'
+    baseUpdate.direction = newDirection
+  }
+
+  setFn(baseUpdate)
+
+  if (effect.reverse && state.players.length === 2 && state.config.actionCards.reverseAsSkip) {
+    handleTurnAdvance(needsUnoConfirm, 2, advanceTurnFn, setFn)
+    return
+  }
+
+  if (effect.drawCount > 0) {
+    setFn({ pendingDrawCount: state.pendingDrawCount + effect.drawCount })
+    handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
+    return
+  }
+
+  if (effect.skipNext) {
+    handleTurnAdvance(needsUnoConfirm, 2, advanceTurnFn, setFn)
+    return
+  }
+
+  if (effect.reverse) {
+    handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
+    return
+  }
+
+  handleTurnAdvance(needsUnoConfirm, 1, advanceTurnFn, setFn)
+}
+
+export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
+  players: [],
+  drawPile: [],
+  discardPile: [],
+  currentPlayerIndex: 0,
+  direction: 'clockwise',
+  currentColor: 'red',
+  phase: 'idle',
+  winner: null,
+  scores: [],
+  cardJustDrawn: null,
+  pendingDrawCount: 0,
+  config: {
+    params: { initialHandSize: 7, aiPlayerCount: 2, targetScore: 0, turnTimeLimit: 0 },
+    actionCards: {
+      stackingDraw2: false, stackingDraw4: false, challengeWild4: false,
+      reverseAsSkip: true, jumpIn: false, sevenORule: false,
+    },
+    draw: { drawToMatch: false, forcePlay: false, multiDrawCount: 1 },
+    uno: { requireUNOCall: true, unoPenaltyDraw: 2, autoDetectUNO: true },
+    scoring: { numberCard: 0, actionCard: 20, wildCard: 50 },
+    ai: { difficulty: 'medium', playRandomness: 0.1, stackAggression: 0.6, challengeAggression: 0.7, wild4BluffChance: 0.15, considerOpponent: true, colorStrategy: 'most' },
+  },
+  unoCalledPlayer: null,
+  pendingUnoAdvance: 0,
+  stackingWaiting: false,
+  challengePlayerIndex: null,
+  turnStartTime: null,
+  gameStartTime: null,
+  lastPlayedBy: null,
+  lastActionEffect: null,
+  colorBeforeWild: null,
+  lastDrawEvent: null,
+  dealSequence: [],
+  dealtIndex: 0,
+  dealAnimConfig: DEFAULT_DEAL_ANIM_CONFIG,
+  pendingInitialTopCard: null,
+  debugMode: false,
+  logEntries: [],
+  drawAnimating: false,
+  pendingDrawResolution: null,
+
+  initGame: () => {
+    const config = useConfigStore.getState().config
+    const deck = createDeck()
+    const shuffled = shuffleDeck(deck)
+    const totalPlayers = 1 + config.params.aiPlayerCount
+    const { players: dealt, remaining } = dealCards(shuffled, totalPlayers, config.params.initialHandSize)
+
+    const names = ['你', '电脑A', '电脑B', '电脑C', '电脑D', '电脑E']
+    const players: Player[] = [
+      { id: 'p0', name: names[0], hand: [], isHuman: true },
+    ]
+    for (let i = 1; i < totalPlayers; i++) {
+      players.push({ id: `p${i}`, name: names[i] || `电脑${i}`, hand: [], isHuman: false })
+    }
+
+    const { drawPile, discardPile, topCard } = getFirstValidTopCard(remaining, [])
+
+    const dealSequence: DealItem[] = []
+    for (let round = 0; round < config.params.initialHandSize; round++) {
+      for (let p = 0; p < totalPlayers; p++) {
+        dealSequence.push({ playerIndex: p, card: dealt[p][round] })
+      }
+    }
+
+    let initialDirection: Direction = 'clockwise'
+    let initialPlayerIndex = 0
+    let initialSkipCount = 0
+
+    if (topCard.type === 'skip') {
+      initialSkipCount = 1
+      initialPlayerIndex = 0
+    } else if (topCard.type === 'reverse') {
+      initialDirection = 'counterclockwise'
+      initialPlayerIndex = totalPlayers - 1
+    }
+
+    let currentDrawPile = drawPile
+    let currentDiscardPile = discardPile
+    let currentPlayers = players
+
+    if (topCard.type === 'draw2') {
+      const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
+        applyDrawToPlayer(currentDrawPile, currentDiscardPile, 2)
+      currentDrawPile = newDrawPile
+      currentDiscardPile = newDiscardPile
+      currentPlayers = currentPlayers.map((p, i) =>
+        i === 0 ? { ...p, hand: [...p.hand, ...drawn] } : p
+      )
+    }
+
+    set({
+      players: currentPlayers,
+      drawPile: currentDrawPile,
+      discardPile: currentDiscardPile,
+      currentPlayerIndex: topCard.type === 'draw2'
+        ? getNextPlayerIndex(0, initialDirection, totalPlayers, 0)
+        : initialPlayerIndex,
+      direction: initialDirection,
+      currentColor: topCard.color ?? 'red',
+      phase: 'dealing',
+      winner: null,
+      scores: Array(totalPlayers).fill(0),
+      cardJustDrawn: null,
+      pendingDrawCount: 0,
+      config,
+      unoCalledPlayer: null,
+      stackingWaiting: false,
+      challengePlayerIndex: null,
+      turnStartTime: null,
+      lastPlayedBy: null,
+      lastActionEffect: null,
+      colorBeforeWild: null,
+      lastDrawEvent: null,
+      dealSequence,
+      dealtIndex: 0,
+      dealAnimConfig: DEFAULT_DEAL_ANIM_CONFIG,
+      pendingInitialTopCard: { ...topCard, id: topCard.id },
+      debugMode: get().debugMode,
+      logEntries: get().logEntries,
+      drawAnimating: false,
+      pendingDrawResolution: null,
+    })
+
+    get().addLogEntry({ event: 'game-start', playerName: '系统' })
+
+    if (initialSkipCount > 0) {
+      get().advanceTurn(initialSkipCount)
+    }
+  },
+
+  playCard: (cardId: string) => {
+    const state = get()
+    if (state.phase !== 'playing') return
+
+    const player = state.players[state.currentPlayerIndex]
+    let isJumpIn = false
+    let playingPlayerIndex = state.currentPlayerIndex
+
+    if (!player.isHuman) {
+      if (state.config.actionCards.jumpIn) {
+        const jumpInResult = validateJumpIn(state, cardId, state.currentPlayerIndex)
+        isJumpIn = jumpInResult.isJumpIn
+        playingPlayerIndex = jumpInResult.playingPlayerIndex
+      }
+      if (!isJumpIn) return
+    } else if (state.config.actionCards.jumpIn && player.isHuman && state.currentPlayerIndex !== 0) {
+      const jumpInResult = validateJumpIn(state, cardId, state.currentPlayerIndex)
+      isJumpIn = jumpInResult.isJumpIn
+      playingPlayerIndex = jumpInResult.playingPlayerIndex
+    }
+
+    const actualPlayer = state.players[playingPlayerIndex]
+    if (!actualPlayer.isHuman) return
+
+    const cardIndex = actualPlayer.hand.findIndex((c) => c.id === cardId)
+    if (cardIndex === -1) return
+
+    const card = actualPlayer.hand[cardIndex]
+    const topCard = state.discardPile[state.discardPile.length - 1]
+
+    if (!validateCardPlay(card, topCard, state, actualPlayer.hand, isJumpIn)) {
+      return
+    }
+
+    const newHand = [...actualPlayer.hand]
+    newHand.splice(cardIndex, 1)
+    const newDiscardPile = [...state.discardPile, card]
+
+    let newPlayers = state.players.map((p, i) =>
+      i === playingPlayerIndex ? { ...p, hand: newHand } : p
+    )
+
+    if (state.config.actionCards.sevenORule) {
+      newPlayers = applySevenORule(newPlayers, card, playingPlayerIndex, state.direction)
+    }
+
+    const baseUpdate: Partial<StoreState> = {
+      players: newPlayers,
+      discardPile: newDiscardPile,
+      cardJustDrawn: null,
+    }
+
+    const unoResult = handleUnoLogic(actualPlayer, newHand.length, state.config, baseUpdate)
+    const needsUnoConfirm = unoResult.needsUnoConfirm
+
+    const victoryResult = checkVictory(newPlayers, playingPlayerIndex, baseUpdate, state.config, state.scores)
+    if (victoryResult.hasWinner) {
+      set(victoryResult.victoryUpdate!)
+      get().addLogEntry({ event: 'round-over', playerName: '系统', extra: `${actualPlayer.name} 获胜` })
+      return
+    }
+
+    const cardInfo = formatCardInfo(card)
+    const isDraw2Stack = card.type === 'draw2' && state.pendingDrawCount > 0
+    let extra: string | undefined
+    if (card.type === 'reverse') extra = '方向反转'
+    if (isDraw2Stack) extra = `叠加至${state.pendingDrawCount + 2}张`
+    get().addLogEntry({ event: 'play', playerName: actualPlayer.name, cardInfo, extra })
+    if (state.config.actionCards.sevenORule && card.type === 'number') {
+      if (card.value === 7) {
+        const swapTarget = state.players.findIndex((p, i) => i !== playingPlayerIndex && p.hand === newPlayers[playingPlayerIndex].hand)
+        const targetName = swapTarget >= 0 ? state.players[swapTarget]?.name : undefined
+        get().addLogEntry({ event: 'hand-swap', playerName: actualPlayer.name, cardInfo, extra: targetName ? `与${targetName}交换` : undefined })
+      } else if (card.value === 0) {
+        get().addLogEntry({ event: 'hand-rotate', playerName: actualPlayer.name, cardInfo, extra: '所有玩家手牌轮转' })
+      }
+    }
+    if (card.type === 'reverse') {
+      get().addLogEntry({ event: 'reverse', playerName: actualPlayer.name, cardInfo, extra: '方向反转' })
+    }
+    if (isDraw2Stack) {
+      get().addLogEntry({ event: 'draw2-stack', playerName: actualPlayer.name, cardInfo, extra: `叠加至${state.pendingDrawCount + 2}张` })
+    }
+
+    const effect = getActionEffect(card, newPlayers.length, state.config.actionCards.reverseAsSkip)
+    applyCardEffectAndAdvanceTurn(
+      card,
+      effect,
+      state,
+      baseUpdate,
+      playingPlayerIndex,
+      isJumpIn,
+      needsUnoConfirm,
+      get().advanceTurn,
+      set
+    )
+  },
+
+  drawCard: () => {
+    const state = get()
+    if (state.phase !== 'playing' || state.drawAnimating) return
+    const player = state.players[state.currentPlayerIndex]
+    if (!player.isHuman) return
+
+    if (state.pendingDrawCount <= 0) {
+      const discardTop = state.discardPile[state.discardPile.length - 1]
+      const hasPlayable = player.hand.some((c) => canPlayCard(c, discardTop, state.currentColor, player.hand))
+      if (hasPlayable) return
+    }
+
+    let currentDrawPile = state.drawPile
+    let currentDiscardPile = state.discardPile
+
+    const reshuffled = ensureNotEmpty(currentDrawPile, currentDiscardPile)
+    currentDrawPile = reshuffled.drawPile
+    currentDiscardPile = reshuffled.discardPile
+
+    if (currentDrawPile.length === 0) {
+      get().advanceTurn(1)
+      return
+    }
+
+    const config = state.config
+    const newHand = [...player.hand]
+    const topCard = currentDiscardPile[currentDiscardPile.length - 1]
+
+    if (config.draw.drawToMatch) {
+      let foundPlayable = false
+      let drawnCard: Card | null = null
+
+      while (currentDrawPile.length > 0 && !foundPlayable) {
+        drawnCard = currentDrawPile.shift()!
+        newHand.push(drawnCard)
+        if (canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
+          foundPlayable = true
+        }
+        if (currentDrawPile.length === 0 && currentDiscardPile.length > 1) {
+          const reshuffled2 = ensureNotEmpty(currentDrawPile, currentDiscardPile)
+          currentDrawPile = reshuffled2.drawPile
+          currentDiscardPile = reshuffled2.discardPile
+        }
+      }
+
+      const newPlayers = state.players.map((p, i) =>
+        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+      )
+
+      set({
+        players: newPlayers,
+        drawPile: currentDrawPile,
+        discardPile: currentDiscardPile,
+        cardJustDrawn: drawnCard,
+        drawAnimating: true,
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: newHand.length - player.hand.length, timestamp: Date.now() },
+      })
+      get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${newHand.length - player.hand.length}张` })
+
+      if (foundPlayable && drawnCard && canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
+        return
+      }
+    } else {
+      const drawCount = config.draw.multiDrawCount
+      const actual = Math.min(drawCount, currentDrawPile.length)
+      if (actual === 0) {
+        get().advanceTurn(1)
+        return
+      }
+      const drawn = currentDrawPile.splice(0, actual)
+      newHand.push(...drawn)
+      const lastDrawn = drawn[drawn.length - 1]
+
+      const newPlayers = state.players.map((p, i) =>
+        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+      )
+
+      set({
+        players: newPlayers,
+        drawPile: currentDrawPile,
+        discardPile: currentDiscardPile,
+        cardJustDrawn: lastDrawn,
+        drawAnimating: true,
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
+      })
+      get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawn.length}张` })
+
+      if (canPlayCard(lastDrawn, topCard, state.currentColor, newHand)) {
+        return
+      }
+    }
+
+    set({ pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 } })
+  },
+
+  pickColor: (color: CardColor) => {
+    const state = get()
+    if (state.phase !== 'color-picking') return
+
+    const topCard = state.discardPile[state.discardPile.length - 1]
+    const colorMap: Record<string, string> = { red: '红色', yellow: '黄色', blue: '蓝色', green: '绿色' }
+    const currentPlayer = state.players[state.currentPlayerIndex]
+
+    set({
+      currentColor: color,
+      phase: 'playing',
+    })
+
+    if (currentPlayer) {
+      get().addLogEntry({ event: 'color-pick', playerName: currentPlayer.name, extra: `选择了 ${colorMap[color] ?? color}` })
+    }
+
+    if (topCard.type === 'wild4' && state.config.actionCards.challengeWild4) {
+      const lastPlayedBy = state.lastPlayedBy
+      const direction = get().direction
+      const numPlayers = state.players.length
+      if (lastPlayedBy) {
+        const nextIdx = getNextPlayerIndex(lastPlayedBy.playerIndex, direction, numPlayers, 0)
+        const nextPlayer = state.players[nextIdx]
+        if (nextPlayer) {
+          if (nextPlayer.isHuman) {
+            set({
+              pendingDrawCount: get().pendingDrawCount + 4,
+              challengePlayerIndex: nextIdx,
+              phase: 'challenge',
+            })
+            return
+          } else {
+            const willChallenge = shouldChallengeWild4(nextPlayer.hand, state.colorBeforeWild ?? state.currentColor, state.config)
+            if (willChallenge) {
+              const playerWhoPlayedWild4 = state.players[lastPlayedBy.playerIndex]
+              const hadMatching = checkWild4Violation(playerWhoPlayedWild4.hand, state.colorBeforeWild ?? state.currentColor)
+              if (hadMatching) {
+                const newDiscardPile = [...state.discardPile]
+                const returnCard = newDiscardPile.pop()!
+                const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile2 } = applyDrawToPlayer(state.drawPile, newDiscardPile, 4)
+                const returnHand = [...playerWhoPlayedWild4.hand, returnCard, ...drawn]
+                const newPlayers = state.players.map((p, i) => i === lastPlayedBy.playerIndex ? { ...p, hand: returnHand } : p)
+                set({ players: newPlayers, discardPile: newDiscardPile2, drawPile: newDrawPile, phase: 'playing', challengePlayerIndex: null, currentPlayerIndex: nextIdx, pendingDrawCount: 0 })
+                return
+              } else {
+                const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } = applyDrawToPlayer(state.drawPile, state.discardPile, 6)
+                const newChallengerHand = [...nextPlayer.hand, ...drawn]
+                const newPlayers = state.players.map((p, i) => i === nextIdx ? { ...p, hand: newChallengerHand } : p)
+                set({ players: newPlayers, drawPile: newDrawPile, discardPile: newDiscardPile, phase: 'playing', pendingDrawCount: 0, challengePlayerIndex: null })
+                const afterSkip = getNextPlayerIndex(nextIdx, state.direction, state.players.length, 1)
+                set({ currentPlayerIndex: afterSkip })
+                return
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (topCard.type === 'wild4') {
+      set({ pendingDrawCount: get().pendingDrawCount + 4 })
+    }
+
+    if (state.pendingUnoAdvance > 0) {
+      set({ phase: 'uno-call' })
+      return
+    }
+
+    if (!state.lastPlayedBy) return
+
+    get().advanceTurn(1)
+  },
+
+  advanceTurn: (skipCount: number = 1) => {
+    const state = get()
+    const numPlayers = state.players.length
+    const config = state.config
+
+    set({ unoCalledPlayer: null, turnStartTime: config.params.turnTimeLimit > 0 ? Date.now() : null })
+
+    if (state.pendingDrawCount > 0) {
+      const stackingEnabled =
+        (config.actionCards.stackingDraw2 || config.actionCards.stackingDraw4)
+      if (stackingEnabled && state.discardPile.length > 0) {
+        const topCard = state.discardPile[state.discardPile.length - 1]
+        const nextIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, 0)
+        const nextPlayer = state.players[nextIdx]
+
+        let hasStackable = false
+        if (topCard.type === 'draw2' || topCard.type === 'wild4') {
+          hasStackable = nextPlayer.hand.some((c) => canStack(c, topCard, config.actionCards))
+        }
+
+        if (hasStackable) {
+          set({
+            currentPlayerIndex: nextIdx,
+            cardJustDrawn: null,
+            unoCalledPlayer: null,
+            turnStartTime: config.params.turnTimeLimit > 0 ? Date.now() : null,
+            stackingWaiting: true,
+          })
+          return
+        }
+      }
+
+      const drawCount = state.pendingDrawCount
+      const nextIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, 0)
+      const player = state.players[nextIdx]
+
+      const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
+        applyDrawToPlayer(state.drawPile, state.discardPile, drawCount)
+
+      const newHand = [...player.hand, ...drawn]
+      const newPlayers = state.players.map((p, i) =>
+        i === nextIdx ? { ...p, hand: newHand } : p
+      )
+
+      const afterSkip = getNextPlayerIndex(nextIdx, state.direction, numPlayers, skipCount - 1)
+      if (drawn.length > 0) {
+        get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawn.length}张` })
+      }
+
+      set({
+        players: newPlayers,
+        pendingDrawCount: 0,
+        drawPile: newDrawPile,
+        discardPile: newDiscardPile,
+        cardJustDrawn: null,
+        stackingWaiting: false,
+        drawAnimating: true,
+        lastDrawEvent: { playerIndex: nextIdx, cardCount: drawn.length, timestamp: Date.now() },
+        pendingDrawResolution: { type: 'setPlayer', playerIndex: afterSkip },
+      })
+      return
+    }
+
+    const nextIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, skipCount - 1)
+    const skippedIdx = getNextPlayerIndex(state.currentPlayerIndex, state.direction, numPlayers, 0)
+    if (skipCount > 1 && state.players[skippedIdx]) {
+      get().addLogEntry({ event: 'skip', playerName: state.players[skippedIdx].name })
+    }
+    set({
+      currentPlayerIndex: nextIdx,
+      cardJustDrawn: null,
+      stackingWaiting: false,
+    })
+  },
+
+  startNewGame: () => {
+    set({
+      players: [],
+      drawPile: [],
+      discardPile: [],
+      currentPlayerIndex: 0,
+      direction: 'clockwise',
+      currentColor: 'red',
+      phase: 'idle',
+      winner: null,
+      scores: [],
+      cardJustDrawn: null,
+      pendingDrawCount: 0,
+      unoCalledPlayer: null,
+      pendingUnoAdvance: 0,
+      stackingWaiting: false,
+      challengePlayerIndex: null,
+      turnStartTime: null,
+      gameStartTime: null,
+      lastPlayedBy: null,
+      lastActionEffect: null,
+      colorBeforeWild: null,
+      lastDrawEvent: null,
+      dealSequence: [],
+      dealtIndex: 0,
+      dealAnimConfig: DEFAULT_DEAL_ANIM_CONFIG,
+      pendingInitialTopCard: null,
+      drawAnimating: false,
+      pendingDrawResolution: null,
+    })
+    get().initGame()
+  },
+
+  acceptDraw: () => {
+    const state = get()
+    if (state.phase !== 'playing' || state.pendingDrawCount <= 0) return
+
+    const player = state.players[state.currentPlayerIndex]
+    if (!player) return
+
+    const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
+      applyDrawToPlayer(state.drawPile, state.discardPile, state.pendingDrawCount)
+
+    if (drawn.length > 0) {
+      const newHand = [...player.hand, ...drawn]
+      const newPlayers = state.players.map((p, i) =>
+        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+      )
+      set({
+        players: newPlayers,
+        drawPile: newDrawPile,
+        discardPile: newDiscardPile,
+        pendingDrawCount: 0,
+        drawAnimating: true,
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawn.length, timestamp: Date.now() },
+      })
+      set({ pendingDrawResolution: { type: 'advanceTurn', skipCount: 1 } })
+    } else {
+      set({ pendingDrawCount: 0 })
+      get().advanceTurn(1)
+      return
+    }
+  },
+
+  resolveUno: (confirmed: boolean) => {
+    const state = get()
+    if (state.phase !== 'uno-call') return
+    const advances = state.pendingUnoAdvance
+    if (advances <= 0) {
+      set({ phase: 'playing' })
+      return
+    }
+
+    if (!confirmed) {
+      const player = state.players[state.currentPlayerIndex]
+      if (player && player.isHuman && player.hand.length === 1) {
+        const penaltyDraw = state.config.uno.unoPenaltyDraw
+        if (penaltyDraw > 0) {
+          const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
+            applyDrawToPlayer(state.drawPile, state.discardPile, penaltyDraw)
+          if (drawn.length > 0) {
+            const newHand = [...player.hand, ...drawn]
+            const newPlayers = state.players.map((p, i) =>
+              i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+            )
+            set({
+              players: newPlayers,
+              drawPile: newDrawPile,
+              discardPile: newDiscardPile,
+            })
+          }
+        }
+      }
+    } else {
+      const player = state.players[state.currentPlayerIndex]
+      if (player) {
+        set({ unoCalledPlayer: player.id })
+        get().addLogEntry({ event: 'uno-call', playerName: player.name })
+      }
+    }
+
+    set({ pendingUnoAdvance: 0, phase: 'playing' })
+    get().advanceTurn(advances)
+  },
+
+  resolveChallenge: (challenge: boolean) => {
+    const state = get()
+    if (state.phase !== 'challenge') return
+
+    const topCard = state.discardPile[state.discardPile.length - 1]
+    if (!topCard || topCard.type !== 'wild4') {
+      set({ phase: 'playing' })
+      return
+    }
+
+    const lastPlayedBy = state.lastPlayedBy
+    const challengerIdx = state.challengePlayerIndex ?? (lastPlayedBy ? getNextPlayerIndex(lastPlayedBy.playerIndex, state.direction, state.players.length, 0) : 0)
+    const challengerName = state.players[challengerIdx]?.name ?? '未知'
+
+    if (!lastPlayedBy) {
+      set({ phase: 'playing', pendingDrawCount: state.pendingDrawCount + 4 })
+      get().advanceTurn(1)
+      return
+    }
+
+    if (challenge) {
+      const playerIdx = lastPlayedBy.playerIndex
+      const player = state.players[playerIdx]
+      const hadMatching = checkWild4Violation(player.hand, state.colorBeforeWild ?? state.currentColor)
+
+      if (hadMatching) {
+        const newDiscardPile = [...state.discardPile]
+        const returnCard = newDiscardPile.pop()!
+
+        const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile2 } =
+          applyDrawToPlayer(state.drawPile, newDiscardPile, 4)
+
+        const returnHand = [...player.hand, returnCard, ...drawn]
+        const newPlayers = state.players.map((p, i) =>
+          i === playerIdx ? { ...p, hand: returnHand } : p
+        )
+
+        set({
+          players: newPlayers,
+          discardPile: newDiscardPile2,
+          drawPile: newDrawPile,
+          phase: 'playing',
+          pendingDrawCount: 0,
+          challengePlayerIndex: null,
+          currentPlayerIndex: challengerIdx,
+        })
+        get().addLogEntry({ event: 'wild4-challenge', playerName: challengerName, cardInfo: '万能+4', extra: '挑战成功' })
+        return
+      } else {
+        const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
+          applyDrawToPlayer(state.drawPile, state.discardPile, 6)
+
+        const challenger = state.players[challengerIdx]
+        const newChallengerHand = [...challenger.hand, ...drawn]
+        const newPlayers = state.players.map((p, i) =>
+          i === challengerIdx ? { ...p, hand: newChallengerHand } : p
+        )
+
+        set({
+          players: newPlayers,
+          drawPile: newDrawPile,
+          discardPile: newDiscardPile,
+          phase: 'playing',
+          pendingDrawCount: 0,
+          challengePlayerIndex: null,
+        })
+        get().addLogEntry({ event: 'wild4-challenge', playerName: challengerName, cardInfo: '万能+4', extra: '挑战失败' })
+        const afterSkip = getNextPlayerIndex(challengerIdx, state.direction, state.players.length, 1)
+        set({ currentPlayerIndex: afterSkip })
+        return
+      }
+    }
+
+    set({
+      phase: 'playing',
+      challengePlayerIndex: null,
+    })
+    get().advanceTurn(1)
+  },
+
+  addDealtCard: (index: number) => {
+    const state = get()
+    if (index < 0 || index >= state.dealSequence.length) return
+    const dealItem = state.dealSequence[index]
+    const newPlayers = state.players.map((p, i) =>
+      i === dealItem.playerIndex ? { ...p, hand: [...p.hand, dealItem.card] } : p
+    )
+    const playerName = state.players[dealItem.playerIndex]?.name ?? `玩家${dealItem.playerIndex}`
+    const isHuman = state.players[dealItem.playerIndex]?.isHuman ?? false
+    const cardInfo = isHuman ? formatCardInfo(dealItem.card) : '背面'
+    set({
+      players: newPlayers,
+      dealtIndex: index + 1,
+    })
+    get().addLogEntry({ event: 'deal', playerName, cardInfo })
+  },
+
+  completeDealing: () => {
+    const state = get()
+    if (state.phase !== 'dealing') return
+    const remainingDealItems = state.dealSequence.slice(state.dealtIndex)
+    const newPlayers = [...state.players]
+    for (const item of remainingDealItems) {
+      newPlayers[item.playerIndex] = {
+        ...newPlayers[item.playerIndex],
+        hand: [...newPlayers[item.playerIndex].hand, item.card],
+      }
+    }
+    const topCard = state.pendingInitialTopCard
+    const nextPhase = topCard && topCard.type === 'wild' ? 'color-picking' : 'playing'
+    set({
+      players: newPlayers,
+      phase: nextPhase,
+      dealSequence: [],
+      dealtIndex: 0,
+      pendingInitialTopCard: null,
+      turnStartTime: state.config.params.turnTimeLimit > 0 ? Date.now() : null,
+      gameStartTime: Date.now(),
+    })
+  },
+
+  toggleDebugMode: () => {
+    set({ debugMode: !get().debugMode })
+  },
+
+  addLogEntry: (entry) => {
+    const newEntry: GameLogEntry = { ...entry, timestamp: Date.now() }
+    const newEntries = [...get().logEntries, newEntry]
+    if (newEntries.length > LOG_MAX_ENTRIES) {
+      newEntries.splice(0, newEntries.length - LOG_MAX_ENTRIES)
+    }
+    set({ logEntries: newEntries })
+  },
+
+  clearLogs: () => {
+    set({ logEntries: [] })
+  },
+
+  completeDrawAnimation: () => {
+    const state = get()
+    const resolution = state.pendingDrawResolution
+    set({ drawAnimating: false, pendingDrawResolution: null })
+    if (resolution?.type === 'advanceTurn') {
+      get().advanceTurn(resolution.skipCount)
+    } else if (resolution?.type === 'setPlayer') {
+      set({ currentPlayerIndex: resolution.playerIndex })
+    }
+  },
+
+  cancelColorPick: () => {
+    const state = get()
+    if (state.phase !== 'color-picking') return
+
+    const player = state.players[state.currentPlayerIndex]
+    if (!player || !player.isHuman) return
+    if (state.lastPlayedBy && state.lastPlayedBy.playerIndex !== state.currentPlayerIndex) return
+
+    const newDiscardPile = [...state.discardPile]
+    const card = newDiscardPile.pop()
+    if (!card) return
+    if (state.lastPlayedBy && card.id !== state.lastPlayedBy.cardId) return
+    if (!state.lastPlayedBy && card.type !== 'wild' && card.type !== 'wild4') return
+
+    const newHand = [...player.hand, card]
+    const newPlayers = state.players.map((p, i) =>
+      i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
+    )
+
+    set({
+      players: newPlayers,
+      discardPile: newDiscardPile,
+      phase: 'playing',
+      lastPlayedBy: null,
+      lastActionEffect: null,
+      colorBeforeWild: null,
+      pendingUnoAdvance: 0,
+    })
+  },
+}))
