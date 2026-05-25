@@ -91,6 +91,17 @@ export function useGameActions() {
     }
   }, [isRemote, localCancelColorPick])
 
+  const advanceTurn = useCallback(
+    (skipCount: number) => {
+      if (isRemote) {
+        sendAction?.({ type: 'game:advance-turn', skipCount })
+      } else {
+        useGameStore.getState().advanceTurn(skipCount)
+      }
+    },
+    [isRemote, sendAction]
+  )
+
   return {
     playCard,
     drawCard,
@@ -99,6 +110,7 @@ export function useGameActions() {
     resolveUno,
     resolveChallenge,
     cancelColorPick,
+    advanceTurn,
     startNewGame: localStartNewGame,
     initGame: localInitGame,
     toggleDebugMode: localToggleDebugMode,
