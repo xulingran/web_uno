@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/store/gameStore'
+import { useLobbyStore } from '@/store/lobbyStore'
 import { findBestCard, chooseColor, shouldStackDraw, shouldChallengeWild4 } from '@/utils/ai'
 import { canPlayCard, getActionEffect, getNextPlayerIndex, getCardActionEffectType, applySevenORule, checkWild4Violation } from '@/utils/rules'
 import { shuffleDeck, drawCards, getCardScore, ensureNotEmpty, applyDrawToPlayer } from '@/utils/deck'
@@ -8,6 +9,7 @@ import { formatCardInfo } from '@/utils/display'
 import type { Card } from '@/utils/types'
 
 export function useGameEngine() {
+  const networkMode = useLobbyStore((s) => s.networkMode)
   const currentPlayerIndex = useGameStore((s) => s.currentPlayerIndex)
   const currentColor = useGameStore((s) => s.currentColor)
   const phase = useGameStore((s) => s.phase)
@@ -18,6 +20,12 @@ export function useGameEngine() {
 
   const aiTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const processingRef = useRef(false)
+
+  // Client mode: no AI engine on client — host runs all game logic
+  if (networkMode === 'client') {
+    useEffect(() => { return () => {} }, [])  // no-op
+    return
+  }
 
   useEffect(() => {
     if (phase !== 'playing') return
