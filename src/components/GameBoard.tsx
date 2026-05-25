@@ -1,6 +1,8 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Settings, Bug } from 'lucide-react'
+import { useGameAdapter } from '@/hooks/useGameAdapter'
+import { useGameActions } from '@/hooks/useGameActions'
 import { useGameStore } from '@/store/gameStore'
 import { canPlayCard, canStack, canJumpIn } from '@/utils/rules'
 import { distributeAIPlayers } from '@/utils/layout'
@@ -36,42 +38,40 @@ const actionColors: Record<string, string> = {
 
 export default function GameBoard() {
   const navigate = useNavigate()
-  const players = useGameStore((s) => s.players)
-  const discardPile = useGameStore((s) => s.discardPile)
-  const drawPile = useGameStore((s) => s.drawPile)
-  const currentPlayerIndex = useGameStore((s) => s.currentPlayerIndex)
-  const direction = useGameStore((s) => s.direction)
-  const currentColor = useGameStore((s) => s.currentColor)
-  const phase = useGameStore((s) => s.phase)
-  const winner = useGameStore((s) => s.winner)
-  const scores = useGameStore((s) => s.scores)
-  const cardJustDrawn = useGameStore((s) => s.cardJustDrawn)
-  const pendingDrawCount = useGameStore((s) => s.pendingDrawCount)
-  const config = useGameStore((s) => s.config)
-  const unoCalledPlayer = useGameStore((s) => s.unoCalledPlayer)
+  const location = useLocation()
+  const players = useGameAdapter((s) => s.players)
+  const discardPile = useGameAdapter((s) => s.discardPile)
+  const drawPile = useGameAdapter((s) => s.drawPile)
+  const currentPlayerIndex = useGameAdapter((s) => s.currentPlayerIndex)
+  const direction = useGameAdapter((s) => s.direction)
+  const currentColor = useGameAdapter((s) => s.currentColor)
+  const phase = useGameAdapter((s) => s.phase)
+  const winner = useGameAdapter((s) => s.winner)
+  const scores = useGameAdapter((s) => s.scores)
+  const cardJustDrawn = useGameAdapter((s) => s.cardJustDrawn)
+  const pendingDrawCount = useGameAdapter((s) => s.pendingDrawCount)
+  const config = useGameAdapter((s) => s.config)
+  const unoCalledPlayer = useGameAdapter((s) => s.unoCalledPlayer)
+  const lastPlayedBy = useGameAdapter((s) => s.lastPlayedBy)
+  const lastActionEffect = useGameAdapter((s) => s.lastActionEffect)
+  const debugMode = useGameAdapter((s) => s.debugMode)
+  const logEntries = useGameAdapter((s) => s.logEntries)
+  const dealAnimConfig = useGameAdapter((s) => s.dealAnimConfig)
+  const drawAnimating = useGameAdapter((s) => s.drawAnimating)
+
   const turnStartTime = useGameStore((s) => s.turnStartTime)
   const gameStartTime = useGameStore((s) => s.gameStartTime)
-  const lastPlayedBy = useGameStore((s) => s.lastPlayedBy)
-  const lastActionEffect = useGameStore((s) => s.lastActionEffect)
-  const debugMode = useGameStore((s) => s.debugMode)
-  const logEntries = useGameStore((s) => s.logEntries)
-  const toggleDebugMode = useGameStore((s) => s.toggleDebugMode)
-  const dealAnimConfig = useGameStore((s) => s.dealAnimConfig)
-  const drawAnimating = useGameStore((s) => s.drawAnimating)
-
-  const playCard = useGameStore((s) => s.playCard)
-  const drawCard = useGameStore((s) => s.drawCard)
-  const pickColor = useGameStore((s) => s.pickColor)
-  const startNewGame = useGameStore((s) => s.startNewGame)
-  const initGame = useGameStore((s) => s.initGame)
-  const acceptDraw = useGameStore((s) => s.acceptDraw)
-  const resolveUno = useGameStore((s) => s.resolveUno)
-  const resolveChallenge = useGameStore((s) => s.resolveChallenge)
-  const advanceTurn = useGameStore((s) => s.advanceTurn)
-  const cancelColorPick = useGameStore((s) => s.cancelColorPick)
   const pendingUnoAdvance = useGameStore((s) => s.pendingUnoAdvance)
 
-  const [showNewGameModal, setShowNewGameModal] = useState(false)
+  const {
+    playCard, drawCard, pickColor, startNewGame, initGame,
+    acceptDraw, resolveUno, resolveChallenge, cancelColorPick,
+    toggleDebugMode,
+  } = useGameActions()
+
+  const advanceTurn = useGameStore((s) => s.advanceTurn)
+
+  const [showNewGameModal, setShowNewGameModal] = useState(() => !!location.state?.showNewGame)
   const [unoNeedsConfirm, setUnoNeedsConfirm] = useState(false)
   const [actionOverlay, setActionOverlay] = useState<{ type: string; color?: string } | null>(null)
   const [discardBounce, setDiscardBounce] = useState(false)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Player } from '@/utils/types'
-import { useGameStore } from '@/store/gameStore'
+import { useGameAdapter } from '@/hooks/useGameAdapter'
+import { useGameActions } from '@/hooks/useGameActions'
 import { getCardScore } from '@/utils/deck'
 import { Bug } from 'lucide-react'
 
@@ -15,9 +16,9 @@ interface ScoreboardProps {
 export default function Scoreboard({ visible, players, scores, winner, onNewGame }: ScoreboardProps) {
   const [show, setShow] = useState(false)
   const [animating, setAnimating] = useState(false)
-  const config = useGameStore((s) => s.config)
-  const debugMode = useGameStore((s) => s.debugMode)
-  const toggleDebugMode = useGameStore((s) => s.toggleDebugMode)
+  const config = useGameAdapter((s) => s.config)
+  const debugMode = useGameAdapter((s) => s.debugMode)
+  const { toggleDebugMode } = useGameActions()
 
   useEffect(() => {
     if (visible) {

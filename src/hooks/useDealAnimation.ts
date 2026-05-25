@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useGameStore } from '@/store/gameStore'
+import { useLobbyStore } from '@/store/lobbyStore'
 import type { DealItem } from '@/utils/types'
 
 interface UseDealAnimationReturn {
@@ -10,6 +11,7 @@ interface UseDealAnimationReturn {
 }
 
 export function useDealAnimation(): UseDealAnimationReturn {
+  const networkMode = useLobbyStore((s) => s.networkMode)
   const phase = useGameStore((s) => s.phase)
   const dealSequence = useGameStore((s) => s.dealSequence)
   const dealtIndex = useGameStore((s) => s.dealtIndex)
@@ -23,8 +25,13 @@ export function useDealAnimation(): UseDealAnimationReturn {
   const intervalRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isPausedRef = useRef(false)
 
-  const isDealing = phase === 'dealing'
+  const isDealing = networkMode === 'client' ? false : phase === 'dealing'
   const dealProgress = dealSequence.length > 0 ? dealtIndex / dealSequence.length : 0
+
+  // Client mode: no-op — host handles dealing animations
+  if (networkMode === 'client') {
+    return { currentDealItem: null, isDealing: false, dealProgress: 0, onDealAnimationComplete: () => {} }
+  }
 
   const startNextAnimation = useCallback((index: number) => {
     if (index >= dealSequence.length) {

@@ -1,7 +1,8 @@
 import { useGameStore, type StoreState } from '@/store/gameStore'
 import { useRemoteGameStore } from '@/store/remoteGameStore'
 import { useLobbyStore } from '@/store/lobbyStore'
-import type { Card, CardColor, Direction, GamePhase } from '@/utils/types'
+import type { Card, CardColor, Direction, GamePhase, DealAnimConfig, GameLogEntry } from '@/utils/types'
+import type { GameConfig } from '@/config/types'
 import type { PlayerView } from '@/network/protocol'
 
 /**
@@ -48,31 +49,10 @@ export interface GameAdapterState {
   unoCalledPlayer: string | null
   dealAnimating: boolean
   drawAnimating: boolean
-  logEntries: { event: string; playerName: string; cardInfo?: string; extra?: string; timestamp: number }[]
+  logEntries: GameLogEntry[]
   debugMode: boolean
-  config: {
-    actionCards: {
-      jumpIn: boolean
-      stackingDraw2: boolean
-      stackingDraw4: boolean
-      challengeWild4: boolean
-      sevenORule: boolean
-      reverseAsSkip: boolean
-    }
-    draw: {
-      drawToMatch: boolean
-      forcePlay: boolean
-      multiDrawCount: number
-    }
-    uno: {
-      requireUNOCall: boolean
-      unoPenaltyDraw: number
-      autoDetectUNO: boolean
-    }
-    params: {
-      turnTimeLimit: number
-    }
-  }
+  config: GameConfig
+  dealAnimConfig: DealAnimConfig
   challengePlayerIndex: number | null
   colorBeforeWild: CardColor | null
   stackingWaiting: boolean
@@ -109,12 +89,8 @@ function mapStoreStateToAdapter(s: StoreState): GameAdapterState {
     drawAnimating: s.drawAnimating,
     logEntries: s.logEntries,
     debugMode: s.debugMode,
-    config: {
-      actionCards: { ...s.config.actionCards },
-      draw: { ...s.config.draw },
-      uno: { ...s.config.uno },
-      params: { turnTimeLimit: s.config.params.turnTimeLimit },
-    },
+    config: s.config,
+    dealAnimConfig: s.dealAnimConfig,
     challengePlayerIndex: s.challengePlayerIndex,
     colorBeforeWild: s.colorBeforeWild,
     stackingWaiting: s.stackingWaiting,

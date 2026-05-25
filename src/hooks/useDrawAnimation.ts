@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useGameStore } from '@/store/gameStore'
+import { useLobbyStore } from '@/store/lobbyStore'
 import type { DealItem } from '@/utils/types'
 
 interface UseDrawAnimationReturn {
@@ -19,9 +20,16 @@ function createDrawAnimationItem(playerIndex: number, timestamp: number, itemInd
 }
 
 export function useDrawAnimation(): UseDrawAnimationReturn {
+  const networkMode = useLobbyStore((s) => s.networkMode)
   const lastDrawEvent = useGameStore((s) => s.lastDrawEvent)
   const dealAnimConfig = useGameStore((s) => s.dealAnimConfig)
+  const addDrawnCard = useGameStore((s) => s.addDrawnCard)
   const completeDrawAnimation = useGameStore((s) => s.completeDrawAnimation)
+
+  // Client mode: no-op — host handles draw animations
+  if (networkMode === 'client') {
+    return { currentDrawItem: null, onDrawAnimationComplete: () => {} }
+  }
 
   const [currentDrawItem, setCurrentDrawItem] = useState<DealItem | null>(null)
   const [queue, setQueue] = useState<DealItem[]>([])
@@ -49,6 +57,8 @@ export function useDrawAnimation(): UseDrawAnimationReturn {
   const onDrawAnimationComplete = useCallback(() => {
     if (animatingIndex < 0) return
 
+    addDrawnCard(animatingIndex)
+
     const nextIndex = animatingIndex + 1
     if (nextIndex >= queue.length) {
       finishQueue()
@@ -61,7 +71,7 @@ export function useDrawAnimation(): UseDrawAnimationReturn {
     intervalRef.current = setTimeout(() => {
       startNextAnimation(queue, nextIndex)
     }, dealAnimConfig.cardInterval)
-  }, [animatingIndex, queue, finishQueue, startNextAnimation, dealAnimConfig.cardInterval])
+  }, [animatingIndex, queue, addDrawnCard, finishQueue, startNextAnimation, dealAnimConfig.cardInterval])
 
   useEffect(() => {
     if (!lastDrawEvent || lastDrawEvent.cardCount <= 0) return
