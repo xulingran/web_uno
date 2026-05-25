@@ -67,6 +67,7 @@ const mockState = {
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ state: null, pathname: '/', search: '', hash: '' }),
 }))
 
 vi.mock('@/store/gameStore', () => {
