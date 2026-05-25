@@ -30,7 +30,6 @@ export function useGameEngine() {
   useEffect(() => {
     if (phase !== 'playing') return
     if (drawAnimating) return
-    if (currentPlayerIndex === 0) return
 
     const currentState = useGameStore.getState()
     const currentPlayer = currentState.players[currentPlayerIndex]
