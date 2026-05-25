@@ -34,6 +34,8 @@ interface GameActions {
   addDrawnCard: (index: number) => void
   completeDrawAnimation: () => void
   cancelColorPick: () => void
+  setNetworkMode: (mode: 'local' | 'host' | 'client') => void
+  setOnStateChange: (cb: ((state: StoreState) => void) | null) => void
 }
 
 export interface StoreState {
@@ -70,6 +72,8 @@ export interface StoreState {
   pendingDrawCards: Card[]
   pendingDrawPlayerIndex: number
   drawnCardIndex: number
+  networkMode: 'local' | 'host' | 'client'
+  onStateChange: ((state: StoreState) => void) | null
 }
 
 function getFirstValidTopCard(
@@ -330,6 +334,8 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   pendingDrawCards: [],
   pendingDrawPlayerIndex: -1,
   drawnCardIndex: 0,
+  networkMode: 'local' as const,
+  onStateChange: null as ((state: StoreState) => void) | null,
 
   initGame: () => {
     const config = useConfigStore.getState().config
@@ -1058,5 +1064,13 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       colorBeforeWild: null,
       pendingUnoAdvance: 0,
     })
+  },
+
+  setNetworkMode: (mode) => {
+    set({ networkMode: mode })
+  },
+
+  setOnStateChange: (cb) => {
+    set({ onStateChange: cb })
   },
 }))
