@@ -10,10 +10,11 @@ export type ClientMessage =
   | { type: 'game:accept-draw' }
   | { type: 'game:resolve-uno'; confirmed: boolean }
   | { type: 'game:resolve-challenge'; challenge: boolean }
+  | { type: 'game:advance-turn'; skipCount: number }
 
 // 房主 → 客户端的消息
 export type HostMessage =
-  | { type: 'room:info'; code: string; players: LobbyPlayer[]; config: GameConfig }
+  | { type: 'room:info'; code: string; players: LobbyPlayer[]; config: GameConfig; yourIndex: number }
   | { type: 'room:player-joined'; playerIndex: number; player: LobbyPlayer }
   | { type: 'room:player-left'; playerIndex: number }
   | { type: 'game:started'; config: GameConfig }
