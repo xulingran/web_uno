@@ -245,11 +245,16 @@ describe('gameStore', () => {
 
     const handLenBefore = useGameStore.getState().players[0].hand.length
     useGameStore.getState().drawCard()
-    const handLenAfter = useGameStore.getState().players[0].hand.length
 
-    expect(handLenAfter).toBe(handLenBefore + 1)
-    expect(useGameStore.getState().drawAnimating).toBe(true)
-    expect(useGameStore.getState().pendingDrawResolution).toEqual({ type: 'advanceTurn', skipCount: 1 })
+    const state = useGameStore.getState()
+    expect(state.players[0].hand.length).toBe(handLenBefore)
+    expect(state.pendingDrawCards).toHaveLength(1)
+    expect(state.pendingDrawPlayerIndex).toBe(0)
+    expect(state.drawAnimating).toBe(true)
+    expect(state.pendingDrawResolution).toEqual({ type: 'advanceTurn', skipCount: 1 })
+
+    useGameStore.getState().addDrawnCard(0)
+    expect(useGameStore.getState().players[0].hand.length).toBe(handLenBefore + 1)
   })
 
   it('playCard — 打出 Wild 牌时 phase 变为 color-picking', () => {
@@ -423,7 +428,9 @@ describe('gameStore', () => {
     useGameStore.getState().playCard('red-draw2-0')
 
     const state = useGameStore.getState()
-    expect(state.players[1].hand.length).toBe(handLenBefore + 2)
+    expect(state.players[1].hand.length).toBe(handLenBefore)
+    expect(state.pendingDrawCards).toHaveLength(2)
+    expect(state.pendingDrawPlayerIndex).toBe(1)
     expect(state.pendingDrawCount).toBe(0)
     expect(state.drawAnimating).toBe(true)
     expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 2 })
@@ -538,7 +545,9 @@ describe('gameStore', () => {
     useGameStore.getState().pickColor('red' as CardColor)
 
     state = useGameStore.getState()
-    expect(state.players[1].hand.length).toBe(handLenBefore + 4)
+    expect(state.players[1].hand.length).toBe(handLenBefore)
+    expect(state.pendingDrawCards).toHaveLength(4)
+    expect(state.pendingDrawPlayerIndex).toBe(1)
     expect(state.pendingDrawCount).toBe(0)
     expect(state.drawAnimating).toBe(true)
     expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 2 })
@@ -574,7 +583,9 @@ describe('gameStore', () => {
     useGameStore.getState().playCard('red-draw2-0')
 
     const state = useGameStore.getState()
-    expect(state.players[1].hand.length).toBe(handLenBefore + 2)
+    expect(state.players[1].hand.length).toBe(handLenBefore)
+    expect(state.pendingDrawCards).toHaveLength(2)
+    expect(state.pendingDrawPlayerIndex).toBe(1)
     expect(state.pendingDrawCount).toBe(0)
     expect(state.drawAnimating).toBe(true)
     expect(state.pendingDrawResolution).toEqual({ type: 'setPlayer', playerIndex: 0 })

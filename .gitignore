@@ -13,19 +13,20 @@ dist-ssr
 *.local
 .playwright-mcp
 .superpowers
+coverage
+.trae
+.claude
+.codeartsdoer
+docs/superpowers
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .arts
-.codeartsdoer
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
-# Trae generated spec files
-.trae/specs/responsive-layout/

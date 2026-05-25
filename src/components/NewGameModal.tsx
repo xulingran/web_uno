@@ -42,7 +42,7 @@ export default function NewGameModal({ visible, onStart, onCancel }: NewGameModa
         <SettingsPanel compact />
         <div className="flex items-center gap-3 sm:gap-4 w-full">
           <button
-            onClick={() => navigate('/settings')}
+            onClick={() => navigate('/settings', { state: { from: 'new-game' } })}
             className="flex items-center gap-1 px-4 py-2 rounded-xl bg-white/10 text-white/70 font-game text-sm hover:bg-white/20 transition-all"
           >
             <Settings size={16} /> 详细设置

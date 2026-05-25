@@ -49,7 +49,7 @@ const PlayerHand = forwardRef<HTMLDivElement, PlayerHandProps>(function PlayerHa
 
           return (
             <div
-              key={card.id}
+              key={`${card.id}-${index}`}
               className={`flex-shrink-0 hover:z-50 hover:-translate-y-2 ${playable ? 'animate-slide-up' : ''} ${extraClass}`}
               style={{
                 zIndex: index,

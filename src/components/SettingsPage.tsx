@@ -1,15 +1,17 @@
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import SettingsPanel from './SettingsPanel'
 
 export default function SettingsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = location.state?.from
 
   return (
     <div className="h-screen bg-uno-dark flex flex-col overflow-y-auto">
       <header className="flex-shrink-0 flex items-center gap-4 px-4 sm:px-6 py-4 border-b border-white/10">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/', { state: from === 'new-game' ? { showNewGame: true } : undefined })}
           className="text-white/60 hover:text-white/90 transition-colors"
         >
           <ArrowLeft size={24} />

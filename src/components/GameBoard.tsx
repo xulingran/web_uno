@@ -296,6 +296,12 @@ export default function GameBoard() {
         >
           开始游戏
         </button>
+        <button
+          onClick={() => navigate('/lobby')}
+          className="px-8 py-3 rounded-2xl bg-blue-600 text-white font-game text-lg shadow-xl hover:bg-blue-500 hover:scale-105 active:scale-95 transition-all duration-200"
+        >
+          局域网联机
+        </button>
         <NewGameModal
           visible={showNewGameModal}
           onStart={() => {
