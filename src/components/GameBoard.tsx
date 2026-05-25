@@ -4,6 +4,8 @@ import { Settings, Bug } from 'lucide-react'
 import { useGameAdapter } from '@/hooks/useGameAdapter'
 import { useGameActions } from '@/hooks/useGameActions'
 import { useGameStore } from '@/store/gameStore'
+import { useRemoteGameStore } from '@/store/remoteGameStore'
+import { useLobbyStore } from '@/store/lobbyStore'
 import { canPlayCard, canStack, canJumpIn } from '@/utils/rules'
 import { distributeAIPlayers } from '@/utils/layout'
 import { useDealAnimation } from '@/hooks/useDealAnimation'
@@ -41,7 +43,7 @@ export default function GameBoard() {
   const location = useLocation()
   const players = useGameAdapter((s) => s.players)
   const discardPile = useGameAdapter((s) => s.discardPile)
-  const drawPile = useGameAdapter((s) => s.drawPile)
+  const drawPileCount = useGameAdapter((s) => s.drawPileCount)
   const currentPlayerIndex = useGameAdapter((s) => s.currentPlayerIndex)
   const direction = useGameAdapter((s) => s.direction)
   const currentColor = useGameAdapter((s) => s.currentColor)
@@ -66,10 +68,8 @@ export default function GameBoard() {
   const {
     playCard, drawCard, pickColor, startNewGame, initGame,
     acceptDraw, resolveUno, resolveChallenge, cancelColorPick,
-    toggleDebugMode,
+    toggleDebugMode, advanceTurn,
   } = useGameActions()
-
-  const advanceTurn = useGameStore((s) => s.advanceTurn)
 
   const [showNewGameModal, setShowNewGameModal] = useState(() => !!location.state?.showNewGame)
   const [unoNeedsConfirm, setUnoNeedsConfirm] = useState(false)
@@ -84,10 +84,12 @@ export default function GameBoard() {
   const drawPileRef = useRef<HTMLDivElement>(null)
   const playerHandRef = useRef<HTMLDivElement>(null)
 
-  const humanPlayer = players[0]
+  const networkMode = useLobbyStore((s) => s.networkMode)
+  const myPlayerIndex = useLobbyStore((s) => s.myPlayerIndex)
+  const humanPlayer = players[myPlayerIndex]
   const aiCount = players.length - 1
   const distribution = useMemo(() => distributeAIPlayers(aiCount), [aiCount])
-  const isHumanTurn = currentPlayerIndex === 0
+  const isHumanTurn = currentPlayerIndex === myPlayerIndex
   const currentPlayer = players[currentPlayerIndex]
   const topCard = discardPile.length > 0 ? discardPile[discardPile.length - 1] : null
 
@@ -160,14 +162,14 @@ export default function GameBoard() {
   }, [humanPlayer?.hand.length, phase, config.uno.requireUNOCall, unoCalledPlayer, pendingUnoAdvance])
 
   const turnTimeLeft = useMemo(() => {
-    if (!config.params.turnTimeLimit || currentPlayerIndex !== 0 || !turnStartTime) return 0
+    if (!config.params.turnTimeLimit || currentPlayerIndex !== myPlayerIndex || !turnStartTime) return 0
     return Math.max(0, config.params.turnTimeLimit * 1000 - (Date.now() - turnStartTime))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase])
 
   useEffect(() => {
     if (!config.params.turnTimeLimit || config.params.turnTimeLimit <= 0) return
-    if (currentPlayerIndex !== 0) return
+    if (currentPlayerIndex !== myPlayerIndex) return
     if (phase !== 'playing' || !humanPlayer) return
     if (drawAnimating) return
 
@@ -178,23 +180,42 @@ export default function GameBoard() {
 
     const remaining = timeoutMs - elapsed
     const timer = setTimeout(() => {
-      const state = useGameStore.getState()
-      if (state.pendingUnoAdvance > 0) return
-      if (state.currentPlayerIndex !== 0 || state.phase !== 'playing') return
+      const lobbyState = useLobbyStore.getState()
+      const state = lobbyState.networkMode === 'client'
+        ? useRemoteGameStore.getState()
+        : useGameStore.getState()
+
+      if (state.currentPlayerIndex !== myPlayerIndex || state.phase !== 'playing') return
       if (state.drawAnimating) return
-      const hp = state.players[0]
+
+      const hp = state.players[myPlayerIndex]
       if (!hp) return
+
       if (state.pendingDrawCount > 0) {
-        useGameStore.getState().acceptDraw()
+        if (lobbyState.networkMode === 'client') {
+          lobbyState.sendAction?.({ type: 'game:accept-draw' })
+        } else {
+          useGameStore.getState().acceptDraw()
+        }
         return
       }
+
       const tCard = state.discardPile[state.discardPile.length - 1]
       if (!tCard) return
+
       const playable = hp.hand.filter((c) => canPlayCard(c, tCard, state.currentColor, hp.hand))
       if (playable.length > 0) {
-        useGameStore.getState().playCard(playable[0].id)
+        if (lobbyState.networkMode === 'client') {
+          lobbyState.sendAction?.({ type: 'game:play-card', cardId: playable[0].id })
+        } else {
+          useGameStore.getState().playCard(playable[0].id)
+        }
       } else {
-        useGameStore.getState().drawCard()
+        if (lobbyState.networkMode === 'client') {
+          lobbyState.sendAction?.({ type: 'game:draw-card' })
+        } else {
+          useGameStore.getState().drawCard()
+        }
       }
     }, remaining)
 
@@ -345,7 +366,7 @@ export default function GameBoard() {
       </div>
 
       {/* Row 2: Turn timer (conditional) */}
-      {turnTimeLeft > 0 && currentPlayerIndex === 0 && (
+      {turnTimeLeft > 0 && currentPlayerIndex === myPlayerIndex && (
         <div className="text-center text-white/50 text-sm" style={{ gridColumn: '1 / -1', gridRow: '2' }}>
           ⏱ {Math.ceil(turnTimeLeft / 1000)}s
         </div>
@@ -397,7 +418,7 @@ export default function GameBoard() {
         <div className="flex items-center gap-6 sm:gap-12">
           <DrawPile
             ref={drawPileRef}
-            count={drawPile.length}
+            count={drawPileCount}
             onDraw={drawCard}
             canDraw={canDraw && pendingDrawCount <= 0}
           />
@@ -538,7 +559,7 @@ export default function GameBoard() {
       <DealAnimator
         dealItem={currentDealItem}
         sourceRef={drawPileRef}
-        targetRefs={(() => { const m = new Map(aiRefs.current); if (playerHandRef.current) m.set(0, playerHandRef.current); return m })()}
+        targetRefs={(() => { const m = new Map(aiRefs.current); if (playerHandRef.current) m.set(myPlayerIndex, playerHandRef.current); return m })()}
         duration={dealAnimConfig.singleCardDuration}
         easing={dealAnimConfig.easing}
         onComplete={onDealAnimationComplete}
@@ -547,7 +568,7 @@ export default function GameBoard() {
       <DealAnimator
         dealItem={currentDrawItem}
         sourceRef={drawPileRef}
-        targetRefs={(() => { const m = new Map(aiRefs.current); if (playerHandRef.current) m.set(0, playerHandRef.current); return m })()}
+        targetRefs={(() => { const m = new Map(aiRefs.current); if (playerHandRef.current) m.set(myPlayerIndex, playerHandRef.current); return m })()}
         duration={dealAnimConfig.singleCardDuration}
         easing={dealAnimConfig.easing}
         onComplete={onDrawAnimationComplete}
