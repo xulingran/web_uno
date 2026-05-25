@@ -1,0 +1,122 @@
+<h2>房间系统 & 消息协议</h2>
+<p class="subtitle">创建/加入房间流程 + 通信消息定义</p>
+
+<div class="section">
+  <h3>房间流程</h3>
+  <div class="mockup">
+    <div class="mockup-header">从开始到游戏的完整流程</div>
+    <div class="mockup-body" style="padding:20px;font-size:0.9rem;">
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="background:#3b82f6;color:white;padding:4px 10px;border-radius:6px;font-weight:600;font-size:0.8rem;white-space:nowrap;">Step 1</div>
+          <div>房主点击「创建房间」→ 生成 PeerJS peer → 得到 4 位房间码（如 <code style="background:var(--bg-secondary);padding:2px 6px;border-radius:4px;">A3K9</code>）</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="background:#3b82f6;color:white;padding:4px 10px;border-radius:6px;font-weight:600;font-size:0.8rem;white-space:nowrap;">Step 2</div>
+          <div>房主在大厅界面配置：人类玩家数、AI 玩家数、规则设置</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="background:#22c55e;color:white;padding:4px 10px;border-radius:6px;font-weight:600;font-size:0.8rem;white-space:nowrap;">Step 3</div>
+          <div>其他玩家打开同一页面，输入房间码 → PeerJS 连接到房主 → 进入大厅</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="background:#22c55e;color:white;padding:4px 10px;border-radius:6px;font-weight:600;font-size:0.8rem;white-space:nowrap;">Step 4</div>
+          <div>所有人类玩家就位 → 房主点击「开始游戏」→ 游戏开始</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:28px;">
+  <h3>大厅界面（房主视角）</h3>
+  <div class="mockup">
+    <div class="mockup-header">房间码: A3K9</div>
+    <div class="mockup-body" style="padding:20px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
+          <div style="font-weight:600;margin-bottom:12px;">玩家列表</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-primary);border-radius:6px;">
+              <span style="background:#3b82f6;color:white;padding:2px 6px;border-radius:4px;font-size:0.75rem;">房主</span>
+              <span>你</span>
+              <span style="margin-left:auto;color:#22c55e;font-size:0.8rem;">✓ 已就绪</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-primary);border-radius:6px;">
+              <span style="background:#6366f1;color:white;padding:2px 6px;border-radius:4px;font-size:0.75rem;">P2</span>
+              <span>小明</span>
+              <span style="margin-left:auto;color:#22c55e;font-size:0.8rem;">✓ 已就绪</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-primary);border-radius:6px;">
+              <span style="background:#6366f1;color:white;padding:2px 6px;border-radius:4px;font-size:0.75rem;">P3</span>
+              <span style="color:var(--text-secondary);">等待加入...</span>
+              <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">⏳</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--bg-primary);border-radius:6px;">
+              <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:0.75rem;">AI</span>
+              <span>电脑A</span>
+              <span style="margin-left:auto;color:#22c55e;font-size:0.8rem;">✓ 自动</span>
+            </div>
+          </div>
+        </div>
+        <div style="background:var(--bg-secondary);border-radius:8px;padding:16px;">
+          <div style="font-weight:600;margin-bottom:12px;">房间设置</div>
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:0.85rem;">
+            <div style="display:flex;justify-content:space-between;">
+              <span>人类玩家</span>
+              <span>2 / 3</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span>AI 玩家</span>
+              <span>1</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span>规则</span>
+              <span>经典</span>
+            </div>
+          </div>
+          <div style="margin-top:16px;">
+            <button class="mock-button" style="width:100%;background:#3b82f6;color:white;border:none;padding:8px;border-radius:6px;cursor:pointer;">
+              开始游戏
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:28px;">
+  <h3>消息协议</h3>
+  <div class="mockup">
+    <div class="mockup-header">WebSocket 消息类型</div>
+    <div class="mockup-body" style="padding:16px;font-size:0.85rem;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <div style="font-weight:600;margin-bottom:8px;color:#22c55e;">客户端 → 房主</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-family:monospace;font-size:0.8rem;">
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>room:join</b> { name }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:play-card</b> { cardId }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:draw-card</b></div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:pick-color</b> { color }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:accept-draw</b></div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:resolve-uno</b> { confirmed }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:resolve-challenge</b> { challenge }</div>
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:8px;color:#3b82f6;">房主 → 客户端</div>
+          <div style="display:flex;flex-direction:column;gap:4px;font-family:monospace;font-size:0.8rem;">
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>room:info</b> { code, players, config }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:state</b> { 完整可见状态 }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:your-turn</b> { 提示轮到你 }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:action-effect</b> { 动画触发 }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>game:deal-card</b> { 逐张发牌动画 }</div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>room:player-joined</b></div>
+            <div style="padding:4px 8px;background:var(--bg-secondary);border-radius:4px;"><b>room:player-left</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

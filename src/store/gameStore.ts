@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Card, CardColor, Direction, GamePhase, Player, DealItem, DealAnimConfig, GameLogEntry, DrawResolution } from '@/utils/types'
 import type { GameConfig } from '@/config/types'
 import { useConfigStore } from './configStore'
+import { useLobbyStore } from './lobbyStore'
 import { createDeck, shuffleDeck, dealCards, getCardScore, ensureNotEmpty, applyDrawToPlayer } from '@/utils/deck'
 import { canPlayCard, canStack, canJumpIn, getNextPlayerIndex, getActionEffect, getCardActionEffectType, applySevenORule, checkWild4Violation, type ActionEffect } from '@/utils/rules'
 import { shouldChallengeWild4 } from '@/utils/ai'
@@ -339,18 +340,41 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
 
   initGame: () => {
     const config = useConfigStore.getState().config
+    const networkMode = useLobbyStore.getState().networkMode
+    const lobbyPlayers = useLobbyStore.getState().players
     const deck = createDeck()
     const shuffled = shuffleDeck(deck)
-    const totalPlayers = 1 + config.params.aiPlayerCount
-    const { players: dealt, remaining } = dealCards(shuffled, totalPlayers, config.params.initialHandSize)
 
-    const names = ['你', '电脑A', '电脑B', '电脑C', '电脑D', '电脑E']
-    const players: Player[] = [
-      { id: 'p0', name: names[0], hand: [], isHuman: true },
-    ]
-    for (let i = 1; i < totalPlayers; i++) {
-      players.push({ id: `p${i}`, name: names[i] || `电脑${i}`, hand: [], isHuman: false })
+    let totalPlayers: number
+    let players: Player[]
+
+    if (networkMode === 'host' && lobbyPlayers.length > 0) {
+      // 联机模式：从大厅玩家列表构建游戏玩家（按 index 排序确保数组位置 = 玩家索引）
+      totalPlayers = lobbyPlayers.length
+      const sorted = [...lobbyPlayers].sort((a, b) => a.index - b.index)
+      players = sorted.map((lp) => ({
+        id: lp.id,
+        name: lp.name,
+        hand: [] as Card[],
+        isHuman: lp.isHuman,
+      }))
+      console.log('[initGame] Host 模式，排序后玩家:', players.map((p, i) => `[${i}] ${p.name} (human=${p.isHuman})`).join(', '))
+    } else {
+      // 本地模式
+      totalPlayers = 1 + config.params.aiPlayerCount
+      const names = ['你', '电脑A', '电脑B', '电脑C', '电脑D', '电脑E']
+      players = [
+        { id: 'p0', name: names[0], hand: [], isHuman: true },
+      ]
+      for (let i = 1; i < totalPlayers; i++) {
+        players.push({ id: `p${i}`, name: names[i] || `电脑${i}`, hand: [], isHuman: false })
+      }
+      console.log('[initGame] Local 模式, networkMode=' + networkMode + ', lobbyPlayers.length=' + lobbyPlayers.length)
     }
+
+    console.log('[initGame] 创建玩家:', players.map((p) => `${p.name} (human=${p.isHuman})`).join(', '))
+
+    const { players: dealt, remaining } = dealCards(shuffled, totalPlayers, config.params.initialHandSize)
 
     const { drawPile, discardPile, topCard } = getFirstValidTopCard(remaining, [])
 

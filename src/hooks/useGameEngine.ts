@@ -22,12 +22,9 @@ export function useGameEngine() {
   const processingRef = useRef(false)
 
   // Client mode: no AI engine on client — host runs all game logic
-  if (networkMode === 'client') {
-    useEffect(() => { return () => {} }, [])  // no-op
-    return
-  }
 
   useEffect(() => {
+    if (networkMode === 'client') return
     if (phase !== 'playing') return
     if (drawAnimating) return
 
@@ -456,5 +453,5 @@ export function useGameEngine() {
       if (aiTimerRef.current) clearTimeout(aiTimerRef.current)
       processingRef.current = false
     }
-  }, [currentPlayerIndex, phase, discardPileLength, pendingDrawCount, aiHandLengths, currentColor, drawAnimating])
+  }, [currentPlayerIndex, phase, discardPileLength, pendingDrawCount, aiHandLengths, currentColor, drawAnimating, networkMode])
 }

@@ -1,4 +1,4 @@
-import type { Card, CardColor, Direction, GamePhase } from '@/utils/types'
+import type { Card, CardColor, Direction, GamePhase, DealItem, DealAnimConfig } from '@/utils/types'
 import type { GameConfig } from '@/config/types'
 
 // 客户端 → 房主的消息
@@ -51,7 +51,12 @@ export interface GameStateView {
   unoCalledPlayer: string | null
   dealAnimating: boolean
   drawAnimating: boolean
+  lastDrawEvent: { playerIndex: number; cardCount: number; timestamp: number } | null
   logEntries: { event: string; playerName: string; cardInfo?: string; extra?: string; timestamp: number }[]
+  // 发牌动画相关字段（仅在 phase === 'dealing' 时有意义）
+  dealSequence: DealItem[]
+  dealtIndex: number
+  dealAnimConfig: DealAnimConfig
 }
 
 // 玩家可见视图（只包含自己的完整手牌，其他人只显示数量）

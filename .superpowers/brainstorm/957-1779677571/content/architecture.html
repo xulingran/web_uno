@@ -1,0 +1,112 @@
+<h2>PeerJS 房主制架构</h2>
+<p class="subtitle">局域网联机 UNO 的核心数据流</p>
+
+<div class="section">
+  <h3>角色划分</h3>
+  <div class="cards">
+    <div class="card" data-choice="host" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>🏠 房主 (Host)</h3>
+        <p>运行完整游戏引擎 + AI 逻辑。维护权威游戏状态。处理所有玩家操作。广播状态更新给所有客户端。</p>
+        <div style="margin-top:12px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <div style="font-size:0.85rem;color:var(--text-secondary);">包含模块</div>
+          <div style="margin-top:4px;">gameStore · useGameEngine · AI · PeerJS Host</div>
+        </div>
+      </div>
+    </div>
+    <div class="card" data-choice="client" onclick="toggleSelect(this)">
+      <div class="card-body">
+        <h3>🎮 客户端 (Client)</h3>
+        <p>仅负责展示和用户输入。收到房主推送的状态后渲染界面。玩家操作发送给房主处理，不自己改状态。</p>
+        <div style="margin-top:12px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <div style="font-size:0.85rem;color:var(--text-secondary);">包含模块</div>
+          <div style="margin-top:4px;">UI 组件 · 轻量状态副本 · PeerJS Client</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:32px;">
+  <h3>数据流</h3>
+  <div class="mockup">
+    <div class="mockup-header">通信流程示意</div>
+    <div class="mockup-body" style="padding:20px;font-family:monospace;font-size:0.9rem;line-height:2.2;background:var(--bg-primary);">
+      <div style="text-align:center;margin-bottom:16px;">
+        <span style="background:#3b82f6;color:white;padding:6px 16px;border-radius:8px;">🏠 房主浏览器</span>
+        <span style="margin:0 20px;color:var(--text-secondary);">⟷ PeerJS ⟷</span>
+        <span style="background:#22c55e;color:white;padding:6px 16px;border-radius:8px;">🎮 客户端浏览器</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 60px 1fr;gap:4px;margin-top:20px;">
+        <div style="text-align:right;color:var(--text-secondary);">收到完整游戏状态</div>
+        <div style="text-align:center;">←</div>
+        <div style="color:#3b82f6;">① 房主广播 <b>game:state</b></div>
+
+        <div style="text-align:right;color:#22c55e;">② 客户端发送 <b>game:action</b></div>
+        <div style="text-align:center;">→</div>
+        <div style="color:var(--text-secondary);">收到玩家操作请求</div>
+
+        <div style="text-align:right;color:var(--text-secondary);">收到更新后的状态</div>
+        <div style="text-align:center;">←</div>
+        <div style="color:#3b82f6;">③ 房主处理 → 广播新 <b>game:state</b></div>
+      </div>
+
+      <div style="margin-top:20px;padding:12px;background:var(--bg-secondary);border-radius:8px;font-size:0.85rem;">
+        <div style="color:var(--text-secondary);margin-bottom:6px;">AI 回合流程：</div>
+        房主本地运行 AI → AI 执行操作 → 更新本地状态 → 广播给所有客户端
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:32px;">
+  <h3>状态可见性规则</h3>
+  <div class="mockup">
+    <div class="mockup-header">每个玩家能看到什么</div>
+    <div class="mockup-body" style="padding:16px;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);">
+            <th style="text-align:left;padding:8px;">信息</th>
+            <th style="text-align:center;padding:8px;">房主</th>
+            <th style="text-align:center;padding:8px;">客户端A</th>
+            <th style="text-align:center;padding:8px;">客户端B</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">自己的手牌</td>
+            <td style="text-align:center;color:#22c55e;">✅ 全部</td>
+            <td style="text-align:center;color:#22c55e;">✅ 全部</td>
+            <td style="text-align:center;color:#22c55e;">✅ 全部</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">他人手牌</td>
+            <td style="text-align:center;color:#22c55e;">✅ 全部</td>
+            <td style="text-align:center;color:#f59e0b;">🔢 数量</td>
+            <td style="text-align:center;color:#f59e0b;">🔢 数量</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">弃牌堆</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">摸牌堆</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+            <td style="text-align:center;color:#f59e0b;">🔢 数量</td>
+            <td style="text-align:center;color:#f59e0b;">🔢 数量</td>
+          </tr>
+          <tr>
+            <td style="padding:8px;">当前颜色/方向/回合</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+            <td style="text-align:center;color:#22c55e;">✅</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

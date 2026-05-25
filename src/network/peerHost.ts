@@ -2,7 +2,7 @@ import { Peer, type DataConnection } from 'peerjs'
 import type { ClientMessage, HostMessage, GameStateView } from './protocol'
 
 export type HostEventCallback = {
-  onPlayerJoined?: (index: number, conn: DataConnection) => void
+  onPlayerJoined?: (index: number, name: string, conn: DataConnection) => void
   onPlayerLeft?: (index: number) => void
   onClientMessage?: (clientIndex: number, message: ClientMessage) => void
   onError?: (error: Error) => void
@@ -86,7 +86,7 @@ export class PeerHost {
 
             console.log('[PeerHost] 分配玩家索引:', assignedIndex)
             this.connections.set(assignedIndex, conn)
-            this.callbacks.onPlayerJoined?.(assignedIndex, conn)
+            this.callbacks.onPlayerJoined?.(assignedIndex, msg.name, conn)
 
             conn.off('data')
             conn.on('data', (data) => {

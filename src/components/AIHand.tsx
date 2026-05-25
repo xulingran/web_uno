@@ -1,8 +1,8 @@
-import type { Player } from '@/utils/types'
+import type { PlayerView } from '@/network/protocol'
 import CardBack from './CardBack'
 
 interface AIHandProps {
-  player: Player
+  player: PlayerView
   isCurrentTurn: boolean
   position: 'top' | 'left' | 'right'
 }
@@ -42,7 +42,9 @@ export default function AIHand({ player, isCurrentTurn, position }: AIHandProps)
   const rotation = position === 'left' ? -90 : position === 'right' ? 90 : 0
   const cardSize = isSide ? 'side' : 'top'
   const maxDisplay = isSide ? 7 : 10
-  const displayCount = Math.min(player.hand.length, maxDisplay)
+  // 优先使用 handCount（联机模式下其他玩家的 hand 为空数组，但 handCount 是真实牌数）
+  const handCount = player.handCount ?? player.hand.length
+  const displayCount = Math.min(handCount, maxDisplay)
 
   const label = (
     <div
@@ -52,7 +54,7 @@ export default function AIHand({ player, isCurrentTurn, position }: AIHandProps)
           : 'bg-white/10 text-white/80'
       }`}
     >
-      {player.name} · {player.hand.length}张
+      {player.name} · {handCount}张
     </div>
   )
 

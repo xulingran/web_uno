@@ -36,6 +36,10 @@ export function filterStateForPlayer(
     unoCalledPlayer: state.unoCalledPlayer,
     dealAnimating: state.phase === 'dealing',
     drawAnimating: state.drawAnimating,
+    lastDrawEvent: state.lastDrawEvent ? { ...state.lastDrawEvent } : null,
     logEntries: state.logEntries.slice(-50).map((e) => ({ ...e })),
+    dealSequence: state.dealSequence.map((item) => ({ ...item, card: { ...item.card } })),
+    dealtIndex: state.dealtIndex,
+    dealAnimConfig: { ...state.dealAnimConfig },
   }
 }

@@ -7,11 +7,13 @@ export type ClientEventCallback = {
   onError?: (error: Error) => void
 }
 
+const CONNECT_TIMEOUT_MS = 15000
+
 const PEERJS_CONFIG = {
   host: '0.peerjs.com',
   port: 443,
   secure: true,
-  debug: 0,
+  debug: 3,
 }
 
 // 模块级单例，支持跨页面访问
@@ -23,38 +25,101 @@ export class PeerClient {
   private peer: Peer
   private connection: DataConnection | null = null
   private callbacks: ClientEventCallback = {}
+  private dataHandler: ((data: unknown) => void) | null = null
+  private closeHandler: (() => void) | null = null
+  private errorHandler: ((err: Error) => void) | null = null
 
   constructor() {
+    console.log('[PeerClient] 创建 Peer 实例，连接信令服务器...')
     this.peer = new Peer(PEERJS_CONFIG)
     setClientInstance(this)
+
+    this.peer.on('open', (id) => {
+      console.log('[PeerClient] 已连接信令服务器，我的 peerId:', id)
+    })
+
+    this.peer.on('disconnected', () => {
+      console.warn('[PeerClient] 与信令服务器断开连接')
+    })
+
+    this.peer.on('error', (err) => {
+      console.error('[PeerClient] Peer 错误:', err)
+    })
   }
 
   /** 通过完整 peerId 连接房主 */
   async joinByPeerId(hostPeerId: string, playerName: string): Promise<void> {
+    console.log('[PeerClient] 开始连接房主:', hostPeerId)
     return new Promise((resolve, reject) => {
-      const conn = this.peer.connect(hostPeerId, { reliable: true })
+      let settled = false
 
-      conn.on('open', () => {
-        this.connection = conn
-        conn.send({ type: 'room:join', name: playerName } satisfies ClientMessage)
-        resolve()
-      })
+      const done = (err?: Error) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        if (err) {
+          console.error('[PeerClient] 连接失败:', err.message)
+          reject(err)
+        } else {
+          console.log('[PeerClient] 连接成功')
+          resolve()
+        }
+      }
 
-      conn.on('data', (data) => {
-        this.callbacks.onMessage?.(data as HostMessage)
-      })
-
-      conn.on('close', () => {
-        this.callbacks.onDisconnected?.()
-      })
-
-      conn.on('error', (err) => {
-        this.callbacks.onError?.(err)
-      })
+      const timeout = setTimeout(() => {
+        done(new Error('连接超时，请检查网络或确认房主 Peer ID 是否正确'))
+      }, CONNECT_TIMEOUT_MS)
 
       this.peer.on('error', (err) => {
-        reject(err)
+        done(err)
       })
+
+      this.peer.on('disconnected', () => {
+        done(new Error('与信令服务器断开连接，请检查网络'))
+      })
+
+      const doConnect = () => {
+        console.log('[PeerClient] 发起 P2P 连接请求...')
+        const conn = this.peer.connect(hostPeerId, { reliable: true })
+
+        conn.on('open', () => {
+          console.log('[PeerClient] DataConnection 已建立！')
+          this.connection = conn
+          conn.send({ type: 'room:join', name: playerName } satisfies ClientMessage)
+          done()
+        })
+
+        conn.on('data', (data) => {
+          console.log('[PeerClient] 收到数据:', (data as HostMessage).type)
+          this.callbacks.onMessage?.(data as HostMessage)
+        })
+
+        conn.on('close', () => {
+          console.warn('[PeerClient] DataConnection 关闭')
+          this.callbacks.onDisconnected?.()
+        })
+
+        conn.on('error', (err) => {
+          console.error('[PeerClient] DataConnection 错误:', err)
+          this.callbacks.onError?.(err)
+          done(err)
+        })
+
+        conn.on('iceStateChanged', (state) => {
+          console.log('[PeerClient] ICE 状态变化:', state)
+        })
+      }
+
+      // 必须等自己的 peer 连接信令服务器后，再发起 P2P 连接
+      if (this.peer.id) {
+        console.log('[PeerClient] Peer 已就绪，直接发起连接')
+        doConnect()
+      } else {
+        console.log('[PeerClient] 等待信令服务器连接...')
+        this.peer.on('open', () => {
+          doConnect()
+        })
+      }
     })
   }
 
@@ -67,20 +132,24 @@ export class PeerClient {
 
   setCallbacks(callbacks: ClientEventCallback): void {
     this.callbacks = callbacks
-    // 如果已有连接，重新绑定 data 事件
     if (this.connection) {
-      this.connection.off('data')
-      this.connection.off('close')
-      this.connection.off('error')
-      this.connection.on('data', (data) => {
+      if (this.dataHandler) this.connection.off('data', this.dataHandler)
+      if (this.closeHandler) this.connection.off('close', this.closeHandler)
+      if (this.errorHandler) this.connection.off('error', this.errorHandler)
+
+      this.dataHandler = (data: unknown) => {
         this.callbacks.onMessage?.(data as HostMessage)
-      })
-      this.connection.on('close', () => {
+      }
+      this.closeHandler = () => {
         this.callbacks.onDisconnected?.()
-      })
-      this.connection.on('error', (err) => {
+      }
+      this.errorHandler = (err: Error) => {
         this.callbacks.onError?.(err)
-      })
+      }
+
+      this.connection.on('data', this.dataHandler)
+      this.connection.on('close', this.closeHandler)
+      this.connection.on('error', this.errorHandler)
     }
   }
 
@@ -89,6 +158,7 @@ export class PeerClient {
   }
 
   destroy(): void {
+    console.log('[PeerClient] 销毁')
     this.connection?.close()
     this.peer.destroy()
     setClientInstance(null)

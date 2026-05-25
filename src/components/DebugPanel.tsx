@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { X, Copy, ChevronDown, ChevronRight, Send } from 'lucide-react'
 import type { GameLogEntry, GameEventType, Player, GamePhase, Direction, CardColor, Card } from '@/utils/types'
+import { copyToClipboard } from '@/utils/clipboard'
 
 interface DebugPanelProps {
   visible: boolean
@@ -190,7 +191,7 @@ export default function DebugPanel({
 
   const handleCopyAll = () => {
     const text = logEntries.map(formatEntryText).join('\n')
-    navigator.clipboard.writeText(text).catch(() => {})
+    copyToClipboard(text)
   }
 
   const handleSendDebug = () => {

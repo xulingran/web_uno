@@ -9,10 +9,16 @@ import { getClientInstance } from '@/network/peerClient'
 import { filterStateForPlayer } from '@/network/stateView'
 import type { ClientMessage, HostMessage } from '@/network/protocol'
 
+function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return ((...args: unknown[]) => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => { timer = null; fn(...args) }, ms)
+  }) as unknown as T
+}
+
 export default function GamePage() {
   const networkMode = useLobbyStore((s) => s.networkMode)
-  const myPlayerIndex = useLobbyStore((s) => s.myPlayerIndex)
-  const players = useLobbyStore((s) => s.players)
 
   useGameEngine()
 
@@ -54,10 +60,11 @@ export default function GamePage() {
     })
 
     console.log('[GamePage:Host] 开始订阅 gameStore 状态变化')
-    const unsubscribe = useGameStore.subscribe((state) => {
+    const broadcastState = debounce(() => {
       const currentHost = getHostInstance()
       if (!currentHost) return
 
+      const state = useGameStore.getState()
       const currentPlayers = useLobbyStore.getState().players
       const humanClients = currentPlayers.filter((p) => p.isHuman && !p.isHost)
       if (humanClients.length === 0) return
@@ -68,6 +75,10 @@ export default function GamePage() {
         console.log(`[GamePage:Host] 发送给客户端 index=${p.index}, 手牌数=${view.players.find((v) => v.id === p.id)?.handCount ?? 0}`)
         currentHost.sendGameState(p.index, view)
       })
+    }, 50)
+
+    const unsubscribe = useGameStore.subscribe(() => {
+      broadcastState()
     })
 
     return () => {

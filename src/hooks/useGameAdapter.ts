@@ -2,7 +2,7 @@ import { useMemo, useRef } from 'react'
 import { useGameStore, type StoreState } from '@/store/gameStore'
 import { useRemoteGameStore } from '@/store/remoteGameStore'
 import { useLobbyStore } from '@/store/lobbyStore'
-import type { Card, CardColor, Direction, GamePhase, DealAnimConfig, GameLogEntry } from '@/utils/types'
+import type { Card, CardColor, Direction, GamePhase, DealAnimConfig, GameLogEntry, DealItem } from '@/utils/types'
 import type { GameConfig } from '@/config/types'
 import type { PlayerView } from '@/network/protocol'
 
@@ -23,7 +23,19 @@ export function useGameAdapter<T>(selector: (state: GameAdapterState) => T): T {
   // 用 useMemo 缓存映射结果，只在原始状态或 mode 变化时重新计算
   const result = useMemo<T>(() => {
     if (networkMode === 'client') {
-      return selectorRef.current(remoteRawState as unknown as GameAdapterState)
+      // remoteGameStore 来自 GameStateView，缺少部分 UI 字段，在此补齐默认值
+      const lobbyConfig = useLobbyStore.getState().config
+      const merged: GameAdapterState = {
+        ...(remoteRawState as unknown as GameAdapterState),
+        config: lobbyConfig,
+        drawPile: [],
+        debugMode: false,
+        dealAnimConfig: { singleCardDuration: 500, cardInterval: 100, timeout: 2000, easing: 'ease-out' },
+        challengePlayerIndex: null,
+        colorBeforeWild: null,
+        stackingWaiting: false,
+      }
+      return selectorRef.current(merged)
     }
     return selectorRef.current(mapStoreStateToAdapter(localRawState))
   }, [networkMode, localRawState, remoteRawState])
@@ -51,6 +63,7 @@ export interface GameAdapterState {
   unoCalledPlayer: string | null
   dealAnimating: boolean
   drawAnimating: boolean
+  lastDrawEvent: { playerIndex: number; cardCount: number; timestamp: number } | null
   logEntries: GameLogEntry[]
   debugMode: boolean
   config: GameConfig
@@ -59,6 +72,9 @@ export interface GameAdapterState {
   colorBeforeWild: CardColor | null
   stackingWaiting: boolean
   drawPile: Card[]
+  // 发牌动画相关字段
+  dealSequence: DealItem[]
+  dealtIndex: number
 }
 
 function mapStoreStateToAdapter(s: StoreState): GameAdapterState {
@@ -89,6 +105,7 @@ function mapStoreStateToAdapter(s: StoreState): GameAdapterState {
     unoCalledPlayer: s.unoCalledPlayer,
     dealAnimating: s.phase === 'dealing',
     drawAnimating: s.drawAnimating,
+    lastDrawEvent: s.lastDrawEvent,
     logEntries: s.logEntries,
     debugMode: s.debugMode,
     config: s.config,
@@ -97,5 +114,7 @@ function mapStoreStateToAdapter(s: StoreState): GameAdapterState {
     colorBeforeWild: s.colorBeforeWild,
     stackingWaiting: s.stackingWaiting,
     drawPile: s.drawPile,
+    dealSequence: s.dealSequence,
+    dealtIndex: s.dealtIndex,
   }
 }

@@ -28,7 +28,11 @@ const emptyState: GameStateView = {
   unoCalledPlayer: null,
   dealAnimating: false,
   drawAnimating: false,
+  lastDrawEvent: null,
   logEntries: [],
+  dealSequence: [],
+  dealtIndex: 0,
+  dealAnimConfig: { singleCardDuration: 500, cardInterval: 100, timeout: 2000, easing: 'ease-out' },
 }
 
 export const useRemoteGameStore = create<RemoteGameState & RemoteGameActions>()(

@@ -1,0 +1,150 @@
+<h2>代码结构 & 模块设计</h2>
+<p class="subtitle">在现有代码基础上加入网络层，单机模式不受影响</p>
+
+<div class="section">
+  <h3>新增模块</h3>
+  <div class="mockup">
+    <div class="mockup-header">src/network/ 目录</div>
+    <div class="mockup-body" style="padding:16px;">
+      <div style="display:flex;flex-direction:column;gap:8px;font-family:monospace;font-size:0.85rem;">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <span style="background:#3b82f6;color:white;padding:2px 8px;border-radius:4px;font-size:0.75rem;">新增</span>
+          <span>protocol.ts</span>
+          <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">消息类型定义</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <span style="background:#3b82f6;color:white;padding:2px 8px;border-radius:4px;font-size:0.75rem;">新增</span>
+          <span>peerHost.ts</span>
+          <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">房主端 PeerJS 逻辑</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <span style="background:#3b82f6;color:white;padding:2px 8px;border-radius:4px;font-size:0.75rem;">新增</span>
+          <span>peerClient.ts</span>
+          <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">客户端 PeerJS 逻辑</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <span style="background:#3b82f6;color:white;padding:2px 8px;border-radius:4px;font-size:0.75rem;">新增</span>
+          <span>stateView.ts</span>
+          <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">全量状态 → 客户端视图过滤</span>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;display:flex;flex-direction:column;gap:8px;font-family:monospace;font-size:0.85rem;">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:4px;font-size:0.75rem;">新增</span>
+          <span>lobbyStore.ts</span>
+          <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">房间/大厅状态管理</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:4px;font-size:0.75rem;">新增</span>
+          <span>remoteGameStore.ts</span>
+          <span style="margin-left:auto;color:var(--text-secondary);font-size:0.8rem;">客户端只读状态副本</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:28px;">
+  <h3>两种模式，两套 Store</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header" style="background:#3b82f6;">🏠 单机 / 房主模式</div>
+      <div class="mockup-body" style="padding:16px;font-size:0.85rem;">
+        <div style="color:var(--text-secondary);margin-bottom:8px;">使用现有模块，几乎不改：</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div>✅ gameStore.ts（权威状态）</div>
+          <div>✅ useGameEngine.ts（AI 驱动）</div>
+          <div>✅ 所有 UI 组件不变</div>
+        </div>
+        <div style="margin-top:12px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <div style="font-size:0.8rem;color:var(--text-secondary);">房主额外职责</div>
+          <div style="margin-top:4px;font-size:0.8rem;">
+            状态变化时 → stateView 过滤 → 通过 peerHost 广播给客户端
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header" style="background:#22c55e;">🎮 客户端模式</div>
+      <div class="mockup-body" style="padding:16px;font-size:0.85rem;">
+        <div style="color:var(--text-secondary);margin-bottom:8px;">使用新的只读 store：</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div>🆕 remoteGameStore（只读状态）</div>
+          <div>🆕 peerClient（发送操作）</div>
+          <div>✅ UI 组件复用（读取 store 接口一致）</div>
+        </div>
+        <div style="margin-top:12px;padding:8px;background:var(--bg-secondary);border-radius:6px;">
+          <div style="font-size:0.8rem;color:var(--text-secondary);">客户端行为</div>
+          <div style="margin-top:4px;font-size:0.8rem;">
+            玩家操作 → peerClient 发消息 → 房主处理 → 收到新状态 → 更新 remoteGameStore
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:28px;">
+  <h3>UI 组件适配</h3>
+  <div class="mockup">
+    <div class="mockup-header">统一 Store 接口</div>
+    <div class="mockup-body" style="padding:16px;font-size:0.85rem;">
+      <div style="padding:12px;background:var(--bg-secondary);border-radius:8px;font-family:monospace;font-size:0.8rem;line-height:1.8;">
+        <div style="color:var(--text-secondary);">// 组件不关心数据来源，统一接口</div>
+        <div><span style="color:#22c55e;">type</span> GameStoreView = {</div>
+        <div style="padding-left:16px;">players: PlayerView[]</div>
+        <div style="padding-left:16px;">discardPile: Card[]</div>
+        <div style="padding-left:16px;">currentColor: CardColor</div>
+        <div style="padding-left:16px;">currentPlayerIndex: number</div>
+        <div style="padding-left:16px;">direction: Direction</div>
+        <div style="padding-left:16px;">phase: GamePhase</div>
+        <div style="padding-left:16px;">// ... 其他公共字段</div>
+        <div>}</div>
+        <div style="margin-top:8px;">
+          <div style="color:var(--text-secondary);">// gameStore 和 remoteGameStore 都满足这个接口</div>
+          <div style="color:var(--text-secondary);">// UI 组件只需传入正确的 store 即可</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;color:var(--text-secondary);font-size:0.8rem;">
+        现有 UI 组件（GameBoard、PlayerHand 等）只需改为读取 GameStoreView 接口，<b>无需知道是单机还是联机</b>。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:28px;">
+  <h3>现有文件改动量</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <div style="font-weight:600;margin-bottom:8px;color:#22c55e;">不改</div>
+      <div style="font-size:0.85rem;line-height:1.6;">
+        utils/ai.ts<br/>
+        utils/deck.ts<br/>
+        utils/rules.ts<br/>
+        utils/display.ts<br/>
+        config/*<br/>
+        store/gameStore.ts（核心逻辑）
+      </div>
+    </div>
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <div style="font-weight:600;margin-bottom:8px;color:#f59e0b;">小改</div>
+      <div style="font-size:0.85rem;line-height:1.6;">
+        store/gameStore.ts<br/>
+        <span style="color:var(--text-secondary);font-size:0.8rem;">（加 subscribe 广播钩子）</span><br/>
+        hooks/useGameEngine.ts<br/>
+        <span style="color:var(--text-secondary);font-size:0.8rem;">（加模式判断）</span><br/>
+        App.tsx（加路由）
+      </div>
+    </div>
+    <div style="background:var(--bg-secondary);border-radius:8px;padding:12px;">
+      <div style="font-weight:600;margin-bottom:8px;color:#3b82f6;">新增页面</div>
+      <div style="font-size:0.85rem;line-height:1.6;">
+        LobbyPage.tsx<br/>
+        <span style="color:var(--text-secondary);font-size:0.8rem;">（大厅/创建/加入房间）</span><br/>
+        network/*<br/>
+        <span style="color:var(--text-secondary);font-size:0.8rem;">（6 个新模块）</span>
+      </div>
+    </div>
+  </div>
+</div>

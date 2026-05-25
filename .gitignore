@@ -12,12 +12,10 @@ dist
 dist-ssr
 *.local
 .playwright-mcp
-.superpowers
 coverage
 .trae
 .claude
 .codeartsdoer
-docs/superpowers
 
 # Editor directories and files
 .vscode/*

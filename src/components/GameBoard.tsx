@@ -75,6 +75,8 @@ export default function GameBoard() {
   const [unoNeedsConfirm, setUnoNeedsConfirm] = useState(false)
   const [actionOverlay, setActionOverlay] = useState<{ type: string; color?: string } | null>(null)
   const [discardBounce, setDiscardBounce] = useState(false)
+  // 追踪已处理的 lastActionEffect.timestamp，防止客户端因对象引用变化而重复触发 overlay 动画
+  const lastActionTimestampRef = useRef<number | null>(null)
 
   const { currentDealItem, isDealing, onDealAnimationComplete } = useDealAnimation()
   const { currentDrawItem, onDrawAnimationComplete } = useDrawAnimation()
@@ -86,9 +88,10 @@ export default function GameBoard() {
 
   const networkMode = useLobbyStore((s) => s.networkMode)
   const myPlayerIndex = useLobbyStore((s) => s.myPlayerIndex)
-  const humanPlayer = players[myPlayerIndex]
-  const aiCount = players.length - 1
-  const distribution = useMemo(() => distributeAIPlayers(aiCount), [aiCount])
+  const humanPlayer = myPlayerIndex != null && myPlayerIndex >= 0 && myPlayerIndex < players.length
+    ? players[myPlayerIndex]
+    : undefined
+  const distribution = useMemo(() => distributeAIPlayers(players.length, myPlayerIndex), [players.length, myPlayerIndex])
   const isHumanTurn = currentPlayerIndex === myPlayerIndex
   const currentPlayer = players[currentPlayerIndex]
   const topCard = discardPile.length > 0 ? discardPile[discardPile.length - 1] : null
@@ -161,11 +164,26 @@ export default function GameBoard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [humanPlayer?.hand.length, phase, config.uno.requireUNOCall, unoCalledPlayer, pendingUnoAdvance])
 
-  const turnTimeLeft = useMemo(() => {
-    if (!config.params.turnTimeLimit || currentPlayerIndex !== myPlayerIndex || !turnStartTime) return 0
-    return Math.max(0, config.params.turnTimeLimit * 1000 - (Date.now() - turnStartTime))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase])
+  const [turnTimeLeft, setTurnTimeLeft] = useState(0)
+
+  useEffect(() => {
+    if (!config.params.turnTimeLimit || currentPlayerIndex !== myPlayerIndex || !turnStartTime) {
+      setTurnTimeLeft(0)
+      return
+    }
+
+    const update = () => {
+      const left = Math.max(0, config.params.turnTimeLimit * 1000 - (Date.now() - turnStartTime))
+      setTurnTimeLeft(left)
+    }
+
+    update()
+
+    if (phase !== 'playing') return
+
+    const timer = setInterval(update, 100)
+    return () => clearInterval(timer)
+  }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase, myPlayerIndex])
 
   useEffect(() => {
     if (!config.params.turnTimeLimit || config.params.turnTimeLimit <= 0) return
@@ -185,10 +203,11 @@ export default function GameBoard() {
         ? useRemoteGameStore.getState()
         : useGameStore.getState()
 
-      if (state.currentPlayerIndex !== myPlayerIndex || state.phase !== 'playing') return
+      if (state.currentPlayerIndex !== lobbyState.myPlayerIndex || state.phase !== 'playing') return
+      if (state.winner) return
       if (state.drawAnimating) return
 
-      const hp = state.players[myPlayerIndex]
+      const hp = state.players[lobbyState.myPlayerIndex]
       if (!hp) return
 
       if (state.pendingDrawCount > 0) {
@@ -220,11 +239,12 @@ export default function GameBoard() {
     }, remaining)
 
     return () => clearTimeout(timer)
-  }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase, humanPlayer, drawAnimating])
+  }, [config.params.turnTimeLimit, turnStartTime, currentPlayerIndex, phase, humanPlayer, drawAnimating, myPlayerIndex])
 
-  // Flying card animation
+  // Flying card animation（仅在本地/主机模式播放，联机客户端跳过）
   useEffect(() => {
     if (!lastPlayedBy) return
+    if (networkMode === 'client') return
 
     const sourceEl = aiRefs.current.get(lastPlayedBy.playerIndex)
     const targetEl = discardPileRef.current
@@ -264,7 +284,7 @@ export default function GameBoard() {
       clearTimeout(removeTimer)
       clearTimeout(bounceTimer)
     }
-  }, [lastPlayedBy])
+  }, [lastPlayedBy, networkMode])
 
   useEffect(() => {
     if (discardBounce) {
@@ -276,6 +296,10 @@ export default function GameBoard() {
   // Action effect overlay
   useEffect(() => {
     if (!lastActionEffect) return
+    // 检查是否是新的 action effect（通过 timestamp 判断）
+    if (lastActionEffect.timestamp === lastActionTimestampRef.current) return
+
+    lastActionTimestampRef.current = lastActionEffect.timestamp
     setActionOverlay({ type: lastActionEffect.type, color: lastActionEffect.color })
     const timer = setTimeout(() => setActionOverlay(null), 600)
     return () => clearTimeout(timer)
@@ -295,6 +319,7 @@ export default function GameBoard() {
   }, [currentPlayerIndex])
 
   const setAIRef = useCallback((playerIndex: number, el: HTMLDivElement | null) => {
+    if (playerIndex < 0) return
     if (el) aiRefs.current.set(playerIndex, el)
     else aiRefs.current.delete(playerIndex)
   }, [])
@@ -377,6 +402,7 @@ export default function GameBoard() {
         <div className="flex justify-center gap-3 sm:gap-6 py-2 px-4" style={{ gridColumn: '1 / -1', gridRow: '2' }}>
           {topPlayers.map((p) => {
             const idx = players.indexOf(p)
+            if (idx < 0) return null
             return (
               <div
                 key={p.id}

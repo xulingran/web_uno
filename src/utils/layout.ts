@@ -4,18 +4,30 @@ export interface AIPlayerDistribution {
   right: number | null
 }
 
-export function distributeAIPlayers(count: number): AIPlayerDistribution {
-  if (count <= 0) return { top: [], left: null, right: null }
-  if (count === 1) return { top: [1], left: null, right: null }
+/**
+ * 根据当前玩家视角，计算其他玩家在牌桌上的分布位置。
+ * @param totalPlayers 总玩家数
+ * @param myIndex 当前玩家的索引（本地模式为0，联机模式下为myPlayerIndex）
+ */
+export function distributeAIPlayers(totalPlayers: number, myIndex: number = 0): AIPlayerDistribution {
+  const otherCount = totalPlayers - 1
+  if (otherCount <= 0) return { top: [], left: null, right: null }
 
-  const top: number[] = []
-  for (let i = 2; i < count; i++) {
-    top.push(i)
+  // 收集除自己以外的其他玩家索引，按顺时针顺序排列
+  const others: number[] = []
+  for (let i = 1; i < totalPlayers; i++) {
+    const idx = (myIndex + i) % totalPlayers
+    others.push(idx)
+  }
+
+  // 按顺时针方向分配位置：第一个是左边，最后一个是右边，中间的在上方
+  if (others.length === 1) {
+    return { top: [others[0]], left: null, right: null }
   }
 
   return {
-    top,
-    left: 1,
-    right: count,
+    top: others.slice(1, -1),
+    left: others[0],
+    right: others[others.length - 1],
   }
 }

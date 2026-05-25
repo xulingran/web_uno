@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useLobbyStore } from '@/store/lobbyStore'
 import { useConfigStore } from '@/store/configStore'
 import { PeerHost, getHostInstance } from '@/network/peerHost'
-import { PeerClient, getClientInstance } from '@/network/peerClient'
+import { PeerClient } from '@/network/peerClient'
 import type { ClientMessage, HostMessage, LobbyPlayer } from '@/network/protocol'
+import { copyToClipboard } from '@/utils/clipboard'
 
 export default function LobbyPage() {
   const navigate = useNavigate()
@@ -14,9 +15,9 @@ export default function LobbyPage() {
   const {
     networkMode, setNetworkMode,
     connectionStatus, setConnectionStatus,
-    roomCode, setRoomCode,
+    setRoomCode,
     hostPeerId, setHostPeerId,
-    myPeerId, setMyPeerId,
+    setMyPeerId,
     myPlayerIndex, setMyPlayerIndex,
     playerName, setPlayerName,
     players, setPlayers, addPlayer, removePlayer,
@@ -31,9 +32,17 @@ export default function LobbyPage() {
   const [inputCode, setInputCode] = useState('')
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [showJoinForm, setShowJoinForm] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyPeerId = (text: string) => {
+    copyToClipboard(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   useEffect(() => {
     setLobbyConfig(gameConfig)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleCreateRoom = async () => {
@@ -89,24 +98,36 @@ export default function LobbyPage() {
       }
 
       host.setCallbacks({
-        onPlayerJoined: (index, conn) => {
-          // 移除占位，添加真实玩家
+        onPlayerJoined: (index, name) => {
+          // 移除占位，添加真实玩家（使用客户端发送的真实名字）
           useLobbyStore.getState().removePlayer(index)
-          const playerName = `玩家${index}`
-          addPlayer({
+          const newPlayer: LobbyPlayer = {
             index,
             id: `p${index}`,
-            name: playerName,
+            name: name || `玩家${index}`,
             isHost: false,
             isHuman: true,
             ready: true,
-          })
+          }
+          addPlayer(newPlayer)
           // 给新玩家发送房间信息
           host.sendToClient(index, {
             type: 'room:info',
             code: host.getPeerId(),
             players: useLobbyStore.getState().players,
             config: useLobbyStore.getState().config,
+            yourIndex: index,
+          })
+          // 向其他已连接的客户端广播新玩家加入
+          const otherClients = useLobbyStore.getState().players.filter(
+            (p) => p.isHuman && !p.isHost && p.index !== index && p.ready
+          )
+          otherClients.forEach((p) => {
+            host.sendToClient(p.index, {
+              type: 'room:player-joined',
+              playerIndex: index,
+              player: newPlayer,
+            })
           })
         },
         onPlayerLeft: (index) => {
@@ -120,8 +141,18 @@ export default function LobbyPage() {
             isHuman: true,
             ready: false,
           })
+          // 通知其他客户端该玩家已离开
+          const otherClients = useLobbyStore.getState().players.filter(
+            (p) => p.isHuman && !p.isHost && p.ready
+          )
+          otherClients.forEach((p) => {
+            host.sendToClient(p.index, {
+              type: 'room:player-left',
+              playerIndex: index,
+            })
+          })
         },
-        onClientMessage: (_clientIndex, _msg) => {
+        onClientMessage: () => {
           // 大厅阶段的消息由 PeerHost 内部处理
         },
         onError: (err) => {
@@ -155,11 +186,26 @@ export default function LobbyPage() {
             setLobbyConfig(msg.config)
             setPlayers(msg.players)
             setRoomCode(msg.code.slice(0, 4).toUpperCase())
+            setMyPlayerIndex(msg.yourIndex)
           } else if (msg.type === 'room:player-joined') {
-            removePlayer(msg.playerIndex)
-            addPlayer(msg.player)
+            const currentPlayers = useLobbyStore.getState().players
+            const idx = currentPlayers.findIndex((p) => p.index === msg.playerIndex)
+            if (idx >= 0) {
+              currentPlayers[idx] = msg.player
+              setPlayers([...currentPlayers])
+            } else {
+              addPlayer(msg.player)
+            }
           } else if (msg.type === 'room:player-left') {
             removePlayer(msg.playerIndex)
+            addPlayer({
+              index: msg.playerIndex,
+              id: `pending-p${msg.playerIndex}`,
+              name: `等待加入...`,
+              isHost: false,
+              isHuman: true,
+              ready: false,
+            })
           } else if (msg.type === 'game:started') {
             setLobbyConfig(msg.config)
             navigate('/game')
@@ -193,9 +239,6 @@ export default function LobbyPage() {
           config: lobbyConfig,
         })
       })
-    host?.setCallbacks({
-      ...host?.['callbacks'],
-    })
     navigate('/game')
   }
 
@@ -236,10 +279,20 @@ export default function LobbyPage() {
           {networkMode === 'host' && hostPeerId && (
             <div className="bg-gray-800 rounded-lg p-4 mb-4">
               <p className="text-gray-400 text-sm mb-2">将以下 Peer ID 分享给其他玩家：</p>
-              <div className="bg-gray-700 rounded p-3 text-center">
-                <span className="text-xl font-mono font-bold text-blue-400 select-all">{hostPeerId}</span>
+              <div
+                className="bg-gray-700 rounded p-3 text-center cursor-pointer hover:bg-gray-600 active:bg-gray-500 transition-colors select-all"
+                onClick={() => handleCopyPeerId(hostPeerId)}
+                title="点击复制 Peer ID"
+              >
+                <span className="text-xl font-mono font-bold text-blue-400">{hostPeerId}</span>
               </div>
-              <p className="text-xs text-gray-500 mt-2">其他人输入此 ID 即可加入房间</p>
+              <p className="text-xs text-gray-500 mt-2">
+                {copied ? (
+                  <span className="text-green-400">✓ 已复制到剪贴板</span>
+                ) : (
+                  '点击 Peer ID 可复制，其他人输入此 ID 即可加入房间'
+                )}
+              </p>
             </div>
           )}
 
@@ -273,9 +326,7 @@ export default function LobbyPage() {
                       {p.isHost ? '👑' : p.isHuman ? '🎮' : '🤖'}
                     </span>
                     <span>{p.name}</span>
-                    {networkMode === 'host' &&
-                      myPlayerIndex === p.index &&
-                      '(你)'}
+                    {myPlayerIndex === p.index && '(你)'}
                   </div>
                   <span
                     className={`text-sm ${
