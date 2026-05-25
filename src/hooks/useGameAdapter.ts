@@ -1,3 +1,4 @@
+import { useMemo, useRef } from 'react'
 import { useGameStore, type StoreState } from '@/store/gameStore'
 import { useRemoteGameStore } from '@/store/remoteGameStore'
 import { useLobbyStore } from '@/store/lobbyStore'
@@ -8,25 +9,26 @@ import type { PlayerView } from '@/network/protocol'
 /**
  * 统一的游戏状态 selector。
  * 在 local/host 模式下从 gameStore 读取，在 client 模式下从 remoteGameStore 读取。
+ * 先获取完整原始状态（不使用 selector 避免 getSnapshot 不稳定），再用 useMemo 缓存映射。
  */
 export function useGameAdapter<T>(selector: (state: GameAdapterState) => T): T {
   const networkMode = useLobbyStore((s) => s.networkMode)
+  const selectorRef = useRef(selector)
+  selectorRef.current = selector
 
-  const localState = useGameStore((s) => {
+  // 获取完整原始状态（无 selector，确保 getSnapshot 稳定）
+  const localRawState = useGameStore()
+  const remoteRawState = useRemoteGameStore()
+
+  // 用 useMemo 缓存映射结果，只在原始状态或 mode 变化时重新计算
+  const result = useMemo<T>(() => {
     if (networkMode === 'client') {
-      return undefined as unknown as T
+      return selectorRef.current(remoteRawState as unknown as GameAdapterState)
     }
-    return selector(mapStoreStateToAdapter(s))
-  })
+    return selectorRef.current(mapStoreStateToAdapter(localRawState))
+  }, [networkMode, localRawState, remoteRawState])
 
-  const remoteState = useRemoteGameStore((s) => {
-    if (networkMode !== 'client') {
-      return undefined as unknown as T
-    }
-    return selector(s as unknown as GameAdapterState)
-  })
-
-  return networkMode === 'client' ? remoteState : localState
+  return result
 }
 
 /**
