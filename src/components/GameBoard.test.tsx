@@ -162,6 +162,6 @@ describe('GameBoard', () => {
 
     render(<GameBoard />)
 
-    expect(screen.getByText('调试日志').parentElement?.parentElement).toHaveClass('z-[60]')
+    expect(screen.getByText('调试面板').closest('.z-\\[60\\]')).toBeInTheDocument()
   })
 })

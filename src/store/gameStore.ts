@@ -1048,7 +1048,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     const card = newDiscardPile.pop()
     if (!card) return
     if (state.lastPlayedBy && card.id !== state.lastPlayedBy.cardId) return
-    if (!state.lastPlayedBy && card.type !== 'wild' && card.type !== 'wild4') return
+    if (!state.lastPlayedBy) return
 
     const newHand = [...player.hand, card]
     const newPlayers = state.players.map((p, i) =>
