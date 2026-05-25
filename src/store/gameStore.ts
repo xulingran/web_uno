@@ -31,11 +31,12 @@ interface GameActions {
   toggleDebugMode: () => void
   addLogEntry: (entry: Omit<GameLogEntry, 'timestamp'>) => void
   clearLogs: () => void
+  addDrawnCard: (index: number) => void
   completeDrawAnimation: () => void
   cancelColorPick: () => void
 }
 
-interface StoreState {
+export interface StoreState {
   players: Player[]
   drawPile: Card[]
   discardPile: Card[]
@@ -66,6 +67,9 @@ interface StoreState {
   logEntries: GameLogEntry[]
   drawAnimating: boolean
   pendingDrawResolution: DrawResolution
+  pendingDrawCards: Card[]
+  pendingDrawPlayerIndex: number
+  drawnCardIndex: number
 }
 
 function getFirstValidTopCard(
@@ -323,6 +327,9 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
   logEntries: [],
   drawAnimating: false,
   pendingDrawResolution: null,
+  pendingDrawCards: [],
+  pendingDrawPlayerIndex: -1,
+  drawnCardIndex: 0,
 
   initGame: () => {
     const config = useConfigStore.getState().config
@@ -405,6 +412,9 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       logEntries: get().logEntries,
       drawAnimating: false,
       pendingDrawResolution: null,
+      pendingDrawCards: [],
+      pendingDrawPlayerIndex: -1,
+      drawnCardIndex: 0,
     })
 
     get().addLogEntry({ event: 'game-start', playerName: '系统' })
@@ -537,17 +547,18 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     }
 
     const config = state.config
-    const newHand = [...player.hand]
     const topCard = currentDiscardPile[currentDiscardPile.length - 1]
 
     if (config.draw.drawToMatch) {
       let foundPlayable = false
       let drawnCard: Card | null = null
+      const drawnCards: Card[] = []
 
       while (currentDrawPile.length > 0 && !foundPlayable) {
         drawnCard = currentDrawPile.shift()!
-        newHand.push(drawnCard)
-        if (canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
+        drawnCards.push(drawnCard)
+        const virtualHand = [...player.hand, ...drawnCards]
+        if (canPlayCard(drawnCard, topCard, state.currentColor, virtualHand)) {
           foundPlayable = true
         }
         if (currentDrawPile.length === 0 && currentDiscardPile.length > 1) {
@@ -557,21 +568,19 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         }
       }
 
-      const newPlayers = state.players.map((p, i) =>
-        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
-      )
-
       set({
-        players: newPlayers,
+        pendingDrawCards: drawnCards,
+        pendingDrawPlayerIndex: state.currentPlayerIndex,
         drawPile: currentDrawPile,
         discardPile: currentDiscardPile,
         cardJustDrawn: drawnCard,
         drawAnimating: true,
-        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: newHand.length - player.hand.length, timestamp: Date.now() },
+        lastDrawEvent: { playerIndex: state.currentPlayerIndex, cardCount: drawnCards.length, timestamp: Date.now() },
       })
-      get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${newHand.length - player.hand.length}张` })
+      get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawnCards.length}张` })
 
-      if (foundPlayable && drawnCard && canPlayCard(drawnCard, topCard, state.currentColor, newHand)) {
+      const virtualHand = [...player.hand, ...drawnCards]
+      if (foundPlayable && drawnCard && canPlayCard(drawnCard, topCard, state.currentColor, virtualHand)) {
         return
       }
     } else {
@@ -582,15 +591,11 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         return
       }
       const drawn = currentDrawPile.splice(0, actual)
-      newHand.push(...drawn)
       const lastDrawn = drawn[drawn.length - 1]
 
-      const newPlayers = state.players.map((p, i) =>
-        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
-      )
-
       set({
-        players: newPlayers,
+        pendingDrawCards: drawn,
+        pendingDrawPlayerIndex: state.currentPlayerIndex,
         drawPile: currentDrawPile,
         discardPile: currentDiscardPile,
         cardJustDrawn: lastDrawn,
@@ -599,7 +604,8 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       })
       get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawn.length}张` })
 
-      if (canPlayCard(lastDrawn, topCard, state.currentColor, newHand)) {
+      const virtualHand = [...player.hand, ...drawn]
+      if (canPlayCard(lastDrawn, topCard, state.currentColor, virtualHand)) {
         return
       }
     }
@@ -720,18 +726,14 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       const { drawn, drawPile: newDrawPile, discardPile: newDiscardPile } =
         applyDrawToPlayer(state.drawPile, state.discardPile, drawCount)
 
-      const newHand = [...player.hand, ...drawn]
-      const newPlayers = state.players.map((p, i) =>
-        i === nextIdx ? { ...p, hand: newHand } : p
-      )
-
       const afterSkip = getNextPlayerIndex(nextIdx, state.direction, numPlayers, skipCount - 1)
       if (drawn.length > 0) {
         get().addLogEntry({ event: 'draw', playerName: player.name, extra: `${drawn.length}张` })
       }
 
       set({
-        players: newPlayers,
+        pendingDrawCards: drawn,
+        pendingDrawPlayerIndex: nextIdx,
         pendingDrawCount: 0,
         drawPile: newDrawPile,
         discardPile: newDiscardPile,
@@ -785,6 +787,9 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       pendingInitialTopCard: null,
       drawAnimating: false,
       pendingDrawResolution: null,
+      pendingDrawCards: [],
+      pendingDrawPlayerIndex: -1,
+      drawnCardIndex: 0,
     })
     get().initGame()
   },
@@ -800,12 +805,9 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       applyDrawToPlayer(state.drawPile, state.discardPile, state.pendingDrawCount)
 
     if (drawn.length > 0) {
-      const newHand = [...player.hand, ...drawn]
-      const newPlayers = state.players.map((p, i) =>
-        i === state.currentPlayerIndex ? { ...p, hand: newHand } : p
-      )
       set({
-        players: newPlayers,
+        pendingDrawCards: drawn,
+        pendingDrawPlayerIndex: state.currentPlayerIndex,
         drawPile: newDrawPile,
         discardPile: newDiscardPile,
         pendingDrawCount: 0,
@@ -999,10 +1001,28 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
     set({ logEntries: [] })
   },
 
+  addDrawnCard: (index: number) => {
+    const state = get()
+    if (index < 0 || index >= state.pendingDrawCards.length) return
+    if (state.pendingDrawPlayerIndex < 0) return
+    const card = state.pendingDrawCards[index]
+    const newPlayers = state.players.map((p, i) =>
+      i === state.pendingDrawPlayerIndex ? { ...p, hand: [...p.hand, card] } : p
+    )
+    set({ players: newPlayers, drawnCardIndex: index + 1 })
+  },
+
   completeDrawAnimation: () => {
     const state = get()
+    const remainingCards = state.pendingDrawCards.slice(state.drawnCardIndex)
+    if (remainingCards.length > 0 && state.pendingDrawPlayerIndex >= 0) {
+      const newPlayers = state.players.map((p, i) =>
+        i === state.pendingDrawPlayerIndex ? { ...p, hand: [...p.hand, ...remainingCards] } : p
+      )
+      set({ players: newPlayers })
+    }
     const resolution = state.pendingDrawResolution
-    set({ drawAnimating: false, pendingDrawResolution: null })
+    set({ drawAnimating: false, pendingDrawResolution: null, pendingDrawCards: [], pendingDrawPlayerIndex: -1, drawnCardIndex: 0 })
     if (resolution?.type === 'advanceTurn') {
       get().advanceTurn(resolution.skipCount)
     } else if (resolution?.type === 'setPlayer') {
