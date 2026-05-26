@@ -1,18 +1,13 @@
 import { Peer, type DataConnection } from 'peerjs'
 import type { ClientMessage, HostMessage, GameStateView } from './protocol'
+import { PEERJS_CONFIG } from './peerConfig'
+import { logger } from '@/utils/logger'
 
 export type HostEventCallback = {
   onPlayerJoined?: (index: number, name: string, conn: DataConnection) => void
   onPlayerLeft?: (index: number) => void
   onClientMessage?: (clientIndex: number, message: ClientMessage) => void
   onError?: (error: Error) => void
-}
-
-const PEERJS_CONFIG = {
-  host: '0.peerjs.com',
-  port: 443,
-  secure: true,
-  debug: 3,
 }
 
 // 模块级单例，支持跨页面访问
@@ -27,12 +22,12 @@ export class PeerHost {
   private callbacks: HostEventCallback = {}
 
   constructor() {
-    console.log('[PeerHost] 创建 Peer 实例，连接信令服务器...')
+    logger.debug('[PeerHost] 创建 Peer 实例，连接信令服务器...')
     this.peer = new Peer(PEERJS_CONFIG)
     setHostInstance(this)
 
     this.peer.on('disconnected', () => {
-      console.warn('[PeerHost] 与信令服务器断开连接')
+      logger.warn('[PeerHost] 与信令服务器断开连接')
       this.callbacks.onError?.(new Error('与信令服务器断开连接，请检查网络'))
     })
 
@@ -46,29 +41,35 @@ export class PeerHost {
     maxHumanPlayers: number,
   ): Promise<string> {
     return new Promise((resolve, reject) => {
-      this.peer.on('open', (id) => {
-        console.log('[PeerHost] 已连接信令服务器，我的 peerId:', id)
-        this.roomCode = id.slice(0, 4).toUpperCase()
-        resolve(id)
-      })
-
-      this.peer.on('error', (err) => {
+      const errorHandler = (err: Error) => {
         this.callbacks.onError?.(err)
         reject(err)
-      })
+      }
 
-      this.peer.on('disconnected', () => {
-        console.warn('[PeerHost] 与信令服务器断开连接')
+      const disconnectedHandler = () => {
         this.callbacks.onError?.(new Error('与信令服务器断开连接，请检查网络'))
-      })
+        reject(new Error('与信令服务器断开连接，请检查网络'))
+      }
+
+      const openHandler = (id: string) => {
+        this.peer.off('error', errorHandler)
+        this.peer.off('disconnected', disconnectedHandler)
+        logger.debug('[PeerHost] 已连接信令服务器，我的 peerId:', id)
+        this.roomCode = id.slice(0, 4).toUpperCase()
+        resolve(id)
+      }
+
+      this.peer.on('open', openHandler)
+      this.peer.on('error', errorHandler)
+      this.peer.on('disconnected', disconnectedHandler)
 
       this.peer.on('connection', (conn) => {
-        console.log('[PeerHost] 收到传入连接请求')
+        logger.debug('[PeerHost] 收到传入连接请求')
         let assignedIndex = -1
 
         conn.on('data', (raw) => {
           const msg = raw as ClientMessage
-          console.log('[PeerHost] 收到客户端消息:', msg.type)
+          logger.debug('[PeerHost] 收到客户端消息:', msg.type)
 
           if (msg.type === 'room:join') {
             for (let i = 1; i < 1 + maxHumanPlayers; i++) {
@@ -78,13 +79,13 @@ export class PeerHost {
               }
             }
             if (assignedIndex === -1) {
-              console.warn('[PeerHost] 房间已满，拒绝连接')
+              logger.warn('[PeerHost] 房间已满，拒绝连接')
               conn.send({ type: 'error', message: '房间已满' } satisfies HostMessage)
               conn.close()
               return
             }
 
-            console.log('[PeerHost] 分配玩家索引:', assignedIndex)
+            logger.debug('[PeerHost] 分配玩家索引:', assignedIndex)
             this.connections.set(assignedIndex, conn)
             this.callbacks.onPlayerJoined?.(assignedIndex, msg.name, conn)
 
@@ -96,7 +97,7 @@ export class PeerHost {
         })
 
         conn.on('close', () => {
-          console.log('[PeerHost] 客户端连接关闭, 索引:', assignedIndex)
+          logger.debug('[PeerHost] 客户端连接关闭, 索引:', assignedIndex)
           if (assignedIndex >= 0) {
             this.connections.delete(assignedIndex)
             this.callbacks.onPlayerLeft?.(assignedIndex)
@@ -109,7 +110,7 @@ export class PeerHost {
         })
 
         conn.on('iceStateChanged', (state) => {
-          console.log('[PeerHost] ICE 状态变化:', state)
+          logger.debug('[PeerHost] ICE 状态变化:', state)
         })
       })
     })
@@ -150,7 +151,7 @@ export class PeerHost {
   }
 
   destroy(): void {
-    console.log('[PeerHost] 销毁')
+    logger.debug('[PeerHost] 销毁')
     for (const [, conn] of this.connections) {
       conn.close()
     }

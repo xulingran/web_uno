@@ -7,7 +7,7 @@ import { useGameStore } from '@/store/gameStore'
 import { useRemoteGameStore } from '@/store/remoteGameStore'
 import { useLobbyStore } from '@/store/lobbyStore'
 import { canPlayCard, canStack, canJumpIn } from '@/utils/rules'
-import { distributeAIPlayers } from '@/utils/layout'
+import { distributePlayers } from '@/utils/layout'
 import { useDealAnimation } from '@/hooks/useDealAnimation'
 import { useDrawAnimation } from '@/hooks/useDrawAnimation'
 import PlayerHand from './PlayerHand'
@@ -91,7 +91,7 @@ export default function GameBoard() {
   const humanPlayer = myPlayerIndex != null && myPlayerIndex >= 0 && myPlayerIndex < players.length
     ? players[myPlayerIndex]
     : undefined
-  const distribution = useMemo(() => distributeAIPlayers(players.length, myPlayerIndex), [players.length, myPlayerIndex])
+  const distribution = useMemo(() => distributePlayers(players.length, myPlayerIndex), [players.length, myPlayerIndex])
   const isHumanTurn = currentPlayerIndex === myPlayerIndex
   const currentPlayer = players[currentPlayerIndex]
   const topCard = discardPile.length > 0 ? discardPile[discardPile.length - 1] : null

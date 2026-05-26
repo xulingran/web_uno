@@ -7,6 +7,7 @@ import { createDeck, shuffleDeck, dealCards, getCardScore, ensureNotEmpty, apply
 import { canPlayCard, canStack, canJumpIn, getNextPlayerIndex, getActionEffect, getCardActionEffectType, applySevenORule, checkWild4Violation, type ActionEffect } from '@/utils/rules'
 import { shouldChallengeWild4 } from '@/utils/ai'
 import { formatCardInfo } from '@/utils/display'
+import { logger } from '@/utils/logger'
 
 const DEFAULT_DEAL_ANIM_CONFIG: DealAnimConfig = {
   singleCardDuration: 200,
@@ -358,7 +359,7 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
         hand: [] as Card[],
         isHuman: lp.isHuman,
       }))
-      console.log('[initGame] Host 模式，排序后玩家:', players.map((p, i) => `[${i}] ${p.name} (human=${p.isHuman})`).join(', '))
+      logger.debug('[initGame] Host 模式，排序后玩家:', players.map((p, i) => `[${i}] ${p.name} (human=${p.isHuman})`).join(', '))
     } else {
       // 本地模式
       totalPlayers = 1 + config.params.aiPlayerCount
@@ -369,10 +370,10 @@ export const useGameStore = create<StoreState & GameActions>()((set, get) => ({
       for (let i = 1; i < totalPlayers; i++) {
         players.push({ id: `p${i}`, name: names[i] || `电脑${i}`, hand: [], isHuman: false })
       }
-      console.log('[initGame] Local 模式, networkMode=' + networkMode + ', lobbyPlayers.length=' + lobbyPlayers.length)
+      logger.debug('[initGame] Local 模式, networkMode=' + networkMode + ', lobbyPlayers.length=' + lobbyPlayers.length)
     }
 
-    console.log('[initGame] 创建玩家:', players.map((p) => `${p.name} (human=${p.isHuman})`).join(', '))
+    logger.debug('[initGame] 创建玩家:', players.map((p) => `${p.name} (human=${p.isHuman})`).join(', '))
 
     const { players: dealt, remaining } = dealCards(shuffled, totalPlayers, config.params.initialHandSize)
 

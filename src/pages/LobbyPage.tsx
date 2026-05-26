@@ -11,6 +11,7 @@ export default function LobbyPage() {
   const navigate = useNavigate()
   const hostRef = useRef<PeerHost | null>(null)
   const clientRef = useRef<PeerClient | null>(null)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const {
     networkMode, setNetworkMode,
@@ -37,12 +38,19 @@ export default function LobbyPage() {
   const handleCopyPeerId = (text: string) => {
     copyToClipboard(text)
     setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
   }
 
   useEffect(() => {
     setLobbyConfig(gameConfig)
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }
   }, [])
 
   const handleCreateRoom = async () => {

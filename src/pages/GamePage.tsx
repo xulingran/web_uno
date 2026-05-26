@@ -7,6 +7,7 @@ import { useRemoteGameStore } from '@/store/remoteGameStore'
 import { getHostInstance } from '@/network/peerHost'
 import { getClientInstance } from '@/network/peerClient'
 import { filterStateForPlayer } from '@/network/stateView'
+import { logger } from '@/utils/logger'
 import type { ClientMessage, HostMessage } from '@/network/protocol'
 
 function debounce<T extends (...args: unknown[]) => void>(fn: T, ms: number): T {
@@ -59,7 +60,7 @@ export default function GamePage() {
       },
     })
 
-    console.log('[GamePage:Host] 开始订阅 gameStore 状态变化')
+    logger.debug('[GamePage:Host] 开始订阅 gameStore 状态变化')
     const broadcastState = debounce(() => {
       const currentHost = getHostInstance()
       if (!currentHost) return
@@ -69,10 +70,10 @@ export default function GamePage() {
       const humanClients = currentPlayers.filter((p) => p.isHuman && !p.isHost)
       if (humanClients.length === 0) return
 
-      console.log(`[GamePage:Host] 广播状态: phase=${state.phase}, 玩家数=${state.players.length}, 客户端数=${humanClients.length}`)
+      logger.debug(`[GamePage:Host] 广播状态: phase=${state.phase}, 玩家数=${state.players.length}, 客户端数=${humanClients.length}`)
       humanClients.forEach((p) => {
         const view = filterStateForPlayer(state, p.index)
-        console.log(`[GamePage:Host] 发送给客户端 index=${p.index}, 手牌数=${view.players.find((v) => v.id === p.id)?.handCount ?? 0}`)
+        logger.debug(`[GamePage:Host] 发送给客户端 index=${p.index}, 手牌数=${view.players.find((v) => v.id === p.id)?.handCount ?? 0}`)
         currentHost.sendGameState(p.index, view)
       })
     }, 50)
@@ -82,7 +83,7 @@ export default function GamePage() {
     })
 
     return () => {
-      console.log('[GamePage:Host] 取消订阅 gameStore')
+      logger.debug('[GamePage:Host] 取消订阅 gameStore')
       unsubscribe()
     }
   }, [networkMode])
@@ -91,10 +92,10 @@ export default function GamePage() {
   useEffect(() => {
     if (networkMode !== 'client') return
 
-    console.log('[GamePage:Client] 设置消息监听')
+    logger.debug('[GamePage:Client] 设置消息监听')
     const client = getClientInstance()
     if (!client) {
-      console.warn('[GamePage:Client] getClientInstance 返回 null!')
+      logger.warn('[GamePage:Client] getClientInstance 返回 null!')
       return
     }
 
@@ -103,7 +104,7 @@ export default function GamePage() {
         if (msg.type === 'game:state') {
           const myIdx = useLobbyStore.getState().myPlayerIndex
           const myHand = msg.state.players[myIdx]?.handCount ?? '?'
-          console.log(`[GamePage:Client] 收到 game:state — phase=${msg.state.phase}, 玩家数=${msg.state.players.length}, myIdx=${myIdx}, 我的手牌数=${myHand}, 玩家名=[${msg.state.players.map((p) => p.name + (p.isHuman ? '(人)' : '(AI)')).join(',')}]`)
+          logger.debug(`[GamePage:Client] 收到 game:state — phase=${msg.state.phase}, 玩家数=${msg.state.players.length}, myIdx=${myIdx}, 我的手牌数=${myHand}, 玩家名=[${msg.state.players.map((p) => p.name + (p.isHuman ? '(人)' : '(AI)')).join(',')}]`)
           useRemoteGameStore.getState().receiveState(msg.state)
         }
       },

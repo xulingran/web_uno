@@ -1,4 +1,4 @@
-export interface AIPlayerDistribution {
+export interface PlayerDistribution {
   top: number[]
   left: number | null
   right: number | null
@@ -9,7 +9,7 @@ export interface AIPlayerDistribution {
  * @param totalPlayers 总玩家数
  * @param myIndex 当前玩家的索引（本地模式为0，联机模式下为myPlayerIndex）
  */
-export function distributeAIPlayers(totalPlayers: number, myIndex: number = 0): AIPlayerDistribution {
+export function distributePlayers(totalPlayers: number, myIndex: number = 0): PlayerDistribution {
   const otherCount = totalPlayers - 1
   if (otherCount <= 0) return { top: [], left: null, right: null }
 

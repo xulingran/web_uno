@@ -13,6 +13,7 @@ import type { PlayerView } from '@/network/protocol'
  */
 export function useGameAdapter<T>(selector: (state: GameAdapterState) => T): T {
   const networkMode = useLobbyStore((s) => s.networkMode)
+  const lobbyConfig = useLobbyStore((s) => s.config)
   const selectorRef = useRef(selector)
   selectorRef.current = selector
 
@@ -24,7 +25,6 @@ export function useGameAdapter<T>(selector: (state: GameAdapterState) => T): T {
   const result = useMemo<T>(() => {
     if (networkMode === 'client') {
       // remoteGameStore 来自 GameStateView，缺少部分 UI 字段，在此补齐默认值
-      const lobbyConfig = useLobbyStore.getState().config
       const merged: GameAdapterState = {
         ...(remoteRawState as unknown as GameAdapterState),
         config: lobbyConfig,
@@ -38,7 +38,7 @@ export function useGameAdapter<T>(selector: (state: GameAdapterState) => T): T {
       return selectorRef.current(merged)
     }
     return selectorRef.current(mapStoreStateToAdapter(localRawState))
-  }, [networkMode, localRawState, remoteRawState])
+  }, [networkMode, localRawState, remoteRawState, lobbyConfig])
 
   return result
 }
